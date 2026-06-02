@@ -6,6 +6,7 @@ import time
 import shutil
 import logging
 import asyncio
+from collections import defaultdict
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
@@ -25,7 +26,7 @@ app.add_middleware(
 
 WORK_DIR = Path("/tmp/workshop_jobs")
 WORK_DIR.mkdir(parents=True, exist_ok=True)
-JOB_TTL_SECONDS = 3600  # keep frames for 1 hour
+JOB_TTL_SECONDS = 3600
 
 
 @app.on_event("startup")
@@ -43,12 +44,40 @@ async def _cleanup_loop():
                 logger.info(f"Cleaned up old job {d.name}")
 
 
+def _build_camera_groups(transforms: dict, job_id: str) -> list:
+    """Parse transforms.json and build per-camera-position metadata for the frontend."""
+    cam_positions = transforms.get("camera_positions", [])
+    frames_meta   = transforms.get("frames", [])
+
+    pos_frame_map = defaultdict(list)
+    for i, fm in enumerate(frames_meta):
+        pos_idx = fm.get("position_idx", 0)
+        pos_frame_map[pos_idx].append(i)
+
+    groups = []
+    for pos_idx in sorted(pos_frame_map.keys()):
+        fidx_list = pos_frame_map[pos_idx]
+        pos = cam_positions[pos_idx] if pos_idx < len(cam_positions) else [0.0, 0.0, 0.0]
+        first_fidx = fidx_list[0]
+        first_fm   = frames_meta[first_fidx]
+        groups.append({
+            "idx":             pos_idx,
+            "label":           f"Camera {pos_idx + 1}",
+            "position":        pos,
+            "first_transform": first_fm["transform_matrix"],
+            "frame_indices":   fidx_list,
+            "first_frame_url": f"/jobs/{job_id}/frames/frame_{first_fidx:04d}.png",
+            "first_depth_url": f"/jobs/{job_id}/frames/depth_{first_fidx:04d}.png",
+        })
+    return groups
+
+
 @app.post("/generate_interactions")
 async def generate_interactions(
-    file: UploadFile = File(..., description=".ply Gaussian Splat file"),
-    prompt: str = Form(..., description="Comma-separated object labels, e.g. 'chair, desk'"),
+    file:   UploadFile = File(..., description=".ply Gaussian Splat file"),
+    prompt: str        = Form(..., description="Comma-separated object labels"),
 ):
-    job_id = str(uuid.uuid4())
+    job_id  = str(uuid.uuid4())
     job_dir = WORK_DIR / job_id
     job_dir.mkdir(parents=True)
 
@@ -63,8 +92,8 @@ async def generate_interactions(
 
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "pipeline.py",
-        "--ply", str(ply_path),
-        "--prompt", prompt,
+        "--ply",     str(ply_path),
+        "--prompt",  prompt,
         "--job_dir", str(job_dir),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -84,23 +113,40 @@ async def generate_interactions(
     with open(result_path) as f:
         interactions = json.load(f)
 
-    # Delete the large .ply to save disk; keep frames + transforms
     ply_path.unlink(missing_ok=True)
 
-    frames = sorted((job_dir / "frames").glob("frame_*.png"))
-    frame_urls = [f"/jobs/{job_id}/frames/{p.name}" for p in frames]
+    frames_dir = job_dir / "frames"
 
-    logger.info(f"[{job_id}] Done — {len(interactions)} interactions, {len(frames)} frames")
+    # RGB frames
+    rgb_frames = sorted(frames_dir.glob("frame_*.png"))
+    frame_urls = [f"/jobs/{job_id}/frames/{p.name}" for p in rgb_frames]
+
+    # Depth frames (colorized PNGs)
+    depth_frames = sorted(frames_dir.glob("depth_*.png"))
+    depth_urls   = [f"/jobs/{job_id}/frames/{p.name}" for p in depth_frames]
+
+    # Camera groups from transforms.json
+    camera_groups = []
+    transforms_path = job_dir / "transforms.json"
+    if transforms_path.exists():
+        with open(transforms_path) as f:
+            transforms = json.load(f)
+        camera_groups = _build_camera_groups(transforms, job_id)
+
+    logger.info(f"[{job_id}] Done — {len(interactions)} objects, "
+                f"{len(rgb_frames)} frames, {len(camera_groups)} camera positions")
+
     return JSONResponse(content={
-        "objects": interactions,
-        "job_id": job_id,
-        "frames": frame_urls,
+        "objects":       interactions,
+        "job_id":        job_id,
+        "frames":        frame_urls,
+        "depth_frames":  depth_urls,
+        "camera_groups": camera_groups,
     })
 
 
 @app.get("/jobs/{job_id}/frames/{filename}")
 async def get_frame(job_id: str, filename: str):
-    # Prevent path traversal
     if "/" in filename or "\\" in filename or filename.startswith("."):
         raise HTTPException(status_code=400, detail="Invalid filename")
     frame_path = WORK_DIR / job_id / "frames" / filename
