@@ -200,7 +200,12 @@ def _render_depth_map(g: dict, w2c: torch.Tensor,
         near_plane=0.01,
         far_plane=1000.0,
     )
-    return render_depth[0, :, :, 0].cpu().numpy()  # (H, W) — R channel, all 3 are identical
+    # gsplat sh_degree=0 applies: output = SH_C0 * z_cam + 0.5
+    # Invert to recover actual camera-space Z in world units (metres).
+    SH_C0 = 0.28209479177387814
+    rendered = render_depth[0, :, :, 0].cpu().numpy()
+    depth_m = np.maximum((rendered - 0.5) / SH_C0, 0.0)
+    return depth_m.astype(np.float32)
 
 
 def _depth_to_vis(depth_map: np.ndarray) -> np.ndarray:

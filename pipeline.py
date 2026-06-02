@@ -183,9 +183,15 @@ def _run_owlv2(frames_dir: Path, labels: list[str], transforms: dict, scene_radi
             cx_px = int(np.clip((x1 + x2) / 2, 0, W - 1))
             cy_px = int(np.clip((y1 + y2) / 2, 0, H - 1))
 
-            # Use actual depth at the box centre if available
+            # Sample depth from a 5×5 patch around the box centre and take the
+            # median of valid (non-zero) pixels — more robust than a single pixel.
             if depth_map is not None:
-                sampled = float(depth_map[cy_px, cx_px])
+                h5, w5 = depth_map.shape
+                y0 = max(0, cy_px - 2); y1 = min(h5, cy_px + 3)
+                x0 = max(0, cx_px - 2); x1 = min(w5, cx_px + 3)
+                patch = depth_map[y0:y1, x0:x1].ravel()
+                valid = patch[patch > 0.01]
+                sampled = float(np.median(valid)) if valid.size > 0 else 0.0
                 box_depth = sampled if sampled > 0.01 else fallback_depth
             else:
                 box_depth = fallback_depth
