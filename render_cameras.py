@@ -183,7 +183,8 @@ def _render_depth_map(g: dict, w2c: torch.Tensor,
     # Per-Gaussian Z in camera space
     means_h = torch.cat([g["means"], torch.ones(g["means"].shape[0], 1, device=device)], dim=1)
     z_cam = (w2c_mat @ means_h.T)[2].clamp(min=0.01)  # (N,)
-    depth_colors = z_cam.view(-1, 1, 1)  # (N, 1, 1) — sh_degree=0 expects (N, 1, C)
+    # gsplat always requires 3 colour channels — broadcast depth across R/G/B
+    depth_colors = z_cam.view(-1, 1, 1).expand(-1, 1, 3)  # (N, 1, 3)
 
     render_depth, _, _ = rasterization(
         means=g["means"],
@@ -199,7 +200,7 @@ def _render_depth_map(g: dict, w2c: torch.Tensor,
         near_plane=0.01,
         far_plane=1000.0,
     )
-    return render_depth[0, :, :, 0].cpu().numpy()  # (H, W)
+    return render_depth[0, :, :, 0].cpu().numpy()  # (H, W) — R channel, all 3 are identical
 
 
 def _depth_to_vis(depth_map: np.ndarray) -> np.ndarray:
