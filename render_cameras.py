@@ -240,8 +240,9 @@ def render_views(ply_path: str, job_dir: str,
     center, radius = _scene_bounds(g["means"])
     print(f"[render] Scene center={center.round(3)}, radius={radius:.3f}")
 
-    # Camera intrinsics — 90° horizontal FoV
-    fov_x = math.radians(90.0)
+    # Camera intrinsics — 120° horizontal FoV (wide enough to capture full objects
+    # from interior camera positions without heavy fisheye distortion)
+    fov_x = math.radians(120.0)
     fl_x = width / (2.0 * math.tan(fov_x / 2.0))
     fl_y = fl_x
     cx, cy = width / 2.0, height / 2.0
