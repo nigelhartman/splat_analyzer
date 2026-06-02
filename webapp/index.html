@@ -218,7 +218,20 @@
     .result-dot {
       width: 9px; height: 9px; border-radius: 50%;
       flex-shrink: 0; box-shadow: 0 0 6px currentColor;
+      cursor: pointer; transition: opacity 0.2s, box-shadow 0.2s;
+      flex-shrink: 0;
     }
+    .result-dot.off {
+      opacity: 0.18; box-shadow: none !important;
+    }
+    #toggle-all-btn {
+      padding: 2px 8px; font-size: 10px; border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.04); color: #8b949e;
+      cursor: pointer; transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    #toggle-all-btn:hover { background: rgba(255,255,255,0.1); color: #e6edf3; }
     .result-info { flex: 1; min-width: 0; }
     .result-label {
       font-size: 13px; text-transform: capitalize;
@@ -397,7 +410,10 @@
     <div id="tab-objects" class="active">
       <div id="results-header">
         Detected Objects
-        <span id="results-count" class="results-badge">0</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button id="toggle-all-btn">Hide All</button>
+          <span id="results-count" class="results-badge">0</span>
+        </div>
       </div>
       <div id="results-list"></div>
     </div>
@@ -621,9 +637,12 @@
     let showingDepth        = false;
     let lightboxIdx         = 0;
     let lightboxUrls        = [];
-    let lightboxAnnotMap    = null;  // url → [{label,object_idx,box,score}] or null
+    let lightboxAnnotMap    = null;
     let cameraGroupsData    = [];
-    let frameAnnotationsData = {};   // frame_idx (str) → [{label,object_idx,box,score}]
+    let frameAnnotationsData = {};
+    // per-object mesh references for visibility toggling
+    // each entry: { meshes: [Three.js objects], visible: true, dot: HTMLElement }
+    let objectMeshes = [];
 
     // ─── UI refs ─────────────────────────────────────────────────────────────
     const fileInput    = document.getElementById("file-input");
@@ -646,8 +665,34 @@
     const lightboxImg    = document.getElementById("lightbox-img");
     const lightboxCanvas = document.getElementById("lightbox-canvas");
     const lbIndex        = document.getElementById("lb-index");
-    const toggleRgb    = document.getElementById("toggle-rgb");
-    const toggleDepth  = document.getElementById("toggle-depth");
+    const toggleRgb       = document.getElementById("toggle-rgb");
+    const toggleDepth     = document.getElementById("toggle-depth");
+    const toggleAllBtn    = document.getElementById("toggle-all-btn");
+
+    // ── Object visibility toggles ─────────────────────────────────────────────
+    function setObjectVisible(idx, visible) {
+      const entry = objectMeshes[idx];
+      if (!entry) return;
+      entry.visible = visible;
+      entry.meshes.forEach(m => { m.visible = visible; });
+      entry.dot.classList.toggle("off", !visible);
+    }
+
+    function toggleObject(idx) {
+      if (objectMeshes[idx]) setObjectVisible(idx, !objectMeshes[idx].visible);
+      updateToggleAllBtn();
+    }
+
+    function updateToggleAllBtn() {
+      const allVisible = objectMeshes.every(e => e.visible);
+      toggleAllBtn.textContent = allVisible ? "Hide All" : "Show All";
+    }
+
+    toggleAllBtn.addEventListener("click", () => {
+      const allVisible = objectMeshes.every(e => e.visible);
+      objectMeshes.forEach((_, i) => setObjectVisible(i, !allVisible));
+      toggleAllBtn.textContent = allVisible ? "Show All" : "Hide All";
+    });
 
     // ── Tab switching ──────────────────────────────────────────────────────────
     document.querySelectorAll(".results-tab").forEach(tab => {
@@ -814,7 +859,9 @@
       currentDepthUrls  = [];
       cameraGroupsData     = [];
       frameAnnotationsData = {};
+      objectMeshes         = [];
       currentJobId         = null;
+      toggleAllBtn.textContent = "Hide All";
       resultsPanel.classList.remove("open");
     }
 
@@ -994,16 +1041,25 @@
         label2d.position.set(px, py + sy / 2 + 0.12, pz);
         boxGroup.add(label2d);
 
+        // Register meshes for toggling
+        const objIdx = objectMeshes.length;
+        objectMeshes.push({ meshes: [lines, fill, label2d], visible: true, dot: null });
+
         const row = document.createElement("div");
         row.className = "result-item";
         const frameCount = item.frames ? item.frames.length : 0;
         row.innerHTML = `
-          <div class="result-dot" style="background:${hex};box-shadow:0 0 6px ${hex};"></div>
+          <div class="result-dot" style="background:${hex};box-shadow:0 0 6px ${hex};" title="Toggle visibility"></div>
           <div class="result-info">
             <div class="result-label">${item.label}</div>
             <div class="result-pos">${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)}</div>
             ${frameCount ? `<button class="result-frames-btn">${frameCount} frames ›</button>` : ""}
           </div>`;
+
+        const dot = row.querySelector(".result-dot");
+        objectMeshes[objIdx].dot = dot;
+        dot.addEventListener("click", (e) => { e.stopPropagation(); toggleObject(objIdx); });
+
         if (frameCount) {
           row.querySelector(".result-frames-btn").addEventListener("click", (e) => {
             e.stopPropagation();
