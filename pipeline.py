@@ -243,7 +243,7 @@ def run_pipeline(ply_path: str, prompt: str, job_dir: str) -> list[dict]:
             raw_detections,
             eps_m=transforms.get("scene_radius", scene_radius) * 0.30,
             max_per_label=2,
-            min_votes=6,
+            min_votes=10,
             min_peak_score=0.40,
         )
 

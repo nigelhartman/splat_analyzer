@@ -126,7 +126,7 @@ def _generate_camera_positions(center: np.ndarray, radius: float,
     positions = []
     base_angles = np.linspace(0, 2 * math.pi, n_positions, endpoint=False)
     for angle in base_angles:
-        r = rng.uniform(0.25, 0.60) * radius
+        r = rng.uniform(0.45, 0.75) * radius
         jitter = rng.uniform(-0.3, 0.3)
         height_offset = rng.uniform(-0.15, 0.08) * radius
         pos = center + np.array([
@@ -221,7 +221,7 @@ def _depth_to_vis(depth_map: np.ndarray) -> np.ndarray:
 
 def render_views(ply_path: str, job_dir: str,
                  width: int = 512, height: int = 512,
-                 n_positions: int = 5, n_azimuth: int = 6, n_elevation: int = 3):
+                 n_positions: int = 10, n_azimuth: int = 6, n_elevation: int = 3):
     """
     Render RGB + depth from multiple camera positions and write:
       <job_dir>/frames/frame_XXXX.png
@@ -240,9 +240,8 @@ def render_views(ply_path: str, job_dir: str,
     center, radius = _scene_bounds(g["means"])
     print(f"[render] Scene center={center.round(3)}, radius={radius:.3f}")
 
-    # Camera intrinsics — 120° horizontal FoV (wide enough to capture full objects
-    # from interior camera positions without heavy fisheye distortion)
-    fov_x = math.radians(120.0)
+    # Camera intrinsics — 150° horizontal FoV
+    fov_x = math.radians(150.0)
     fl_x = width / (2.0 * math.tan(fov_x / 2.0))
     fl_y = fl_x
     cx, cy = width / 2.0, height / 2.0
@@ -256,7 +255,7 @@ def render_views(ply_path: str, job_dir: str,
     cam_positions = _generate_camera_positions(center, radius, n_positions)
     poses, position_indices = _build_poses(cam_positions, n_azimuth, n_elevation)
     total = len(poses)
-    print(f"[render] {n_positions} positions × {n_azimuth} azimuth × {n_elevation} elevation = {total} views")
+    print(f"[render] {n_positions} positions × {n_azimuth} azimuth × {n_elevation} elevation = {total} views, FOV=150°")
 
     transforms = {
         "fl_x": fl_x, "fl_y": fl_y, "cx": cx, "cy": cy,
