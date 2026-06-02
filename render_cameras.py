@@ -241,7 +241,7 @@ def render_views(ply_path: str, job_dir: str,
     print(f"[render] Scene center={center.round(3)}, radius={radius:.3f}")
 
     # Camera intrinsics — 150° horizontal FoV
-    fov_x = math.radians(150.0)
+    fov_x = math.radians(130.0)
     fl_x = width / (2.0 * math.tan(fov_x / 2.0))
     fl_y = fl_x
     cx, cy = width / 2.0, height / 2.0
