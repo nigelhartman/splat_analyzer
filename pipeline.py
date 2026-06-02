@@ -54,14 +54,15 @@ def _pixel_size_to_world(w_px, h_px, depth, fl_x, fl_y):
     return world_w, world_h
 
 
-def _cluster_detections(detections, eps_m=0.5, max_per_label=2,
-                        min_votes=6, min_peak_score=0.35):
+def _cluster_detections(detections, eps_m=0.5, max_per_label=3,
+                        min_votes=8, min_peak_score=0.35):
     """
-    Score-weighted greedy clustering with false-positive suppression.
+    Anchor-based greedy clustering with false-positive suppression.
 
-    min_votes raised to 6 (from 4) because we now have ~90 frames instead of 36;
-    real objects appear consistently from many different spatial positions.
-    eps_m reduced to 0.3 × radius for tighter clusters given accurate depth.
+    The seed detection's position is used as a FIXED anchor — no centroid drift.
+    Drift was causing two nearby same-label objects (e.g. two sofas) to bleed
+    into each other's clusters because the shifting centroid would migrate toward
+    the second object and absorb its detections.
     """
     by_label = defaultdict(list)
     for det in detections:
@@ -79,13 +80,13 @@ def _cluster_detections(detections, eps_m=0.5, max_per_label=2,
         for i in range(len(dets)):
             if used[i]:
                 continue
+            # Fixed anchor — never updated. Prevents cluster from drifting
+            # toward a neighbouring object and stealing its detections.
+            anchor = positions[i].copy()
             cluster_idx = [i]
-            centroid = positions[i].copy()
             for j in range(i + 1, len(dets)):
-                if not used[j] and np.linalg.norm(centroid - positions[j]) < eps_m:
+                if not used[j] and np.linalg.norm(anchor - positions[j]) < eps_m:
                     cluster_idx.append(j)
-                    w = scores[cluster_idx]
-                    centroid = (positions[cluster_idx] * w[:, None]).sum(0) / w.sum()
             for j in cluster_idx:
                 used[j] = True
 
@@ -253,9 +254,9 @@ def run_pipeline(ply_path: str, prompt: str, job_dir: str) -> list[dict]:
         print(f"[pipeline] Step 3: Clustering {len(raw_detections)} raw detections …")
         clustered = _cluster_detections(
             raw_detections,
-            eps_m=transforms.get("scene_radius", scene_radius) * 0.30,
-            max_per_label=2,
-            min_votes=10,
+            eps_m=transforms.get("scene_radius", scene_radius) * 0.20,
+            max_per_label=3,
+            min_votes=8,
             min_peak_score=0.40,
         )
 
