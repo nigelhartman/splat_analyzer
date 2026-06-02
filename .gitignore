@@ -1,0 +1,13 @@
+*.ply
+*.splat
+*.spz
+*.sogs
+*.ksplat
+*.npy
+__pycache__/
+*.pyc
+*.egg-info/
+.DS_Store
+.env
+/tmp/
+Screenshot*.png

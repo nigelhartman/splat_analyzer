@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Splat Analyzer</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* ── Viewport ─────────────────────────────────────────────────────────── */
+    #viewport {
+      position: fixed;
+      inset: 0;
+    }
+    #viewport canvas { display: block; }
+
+    /* ── Top bar ──────────────────────────────────────────────────────────── */
+    #topbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      background: rgba(13, 17, 23, 0.88);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+
+    .logo {
+      font-size: 15px;
+      font-weight: 700;
+      color: #58a6ff;
+      letter-spacing: -0.4px;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .logo svg { opacity: 0.9; }
+
+    .sep { width: 1px; height: 22px; background: rgba(255,255,255,0.1); flex-shrink: 0; }
+
+    #file-label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 13px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s;
+      user-select: none;
+    }
+    #file-label:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+
+    #filename {
+      font-size: 12px;
+      color: #8b949e;
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    #prompt {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 11px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      color: #e6edf3;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    #prompt:focus { border-color: #388bfd; background: rgba(56,139,253,0.06); }
+    #prompt::placeholder { color: #3d444d; }
+
+    #analyze-btn {
+      padding: 6px 18px;
+      background: #238636;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+    #analyze-btn:hover:not(:disabled) { background: #2ea043; }
+    #analyze-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    #analyze-btn.loading { background: #1a3a26; }
+
+    /* ── Results panel ────────────────────────────────────────────────────── */
+    #results {
+      position: fixed;
+      right: 0; top: 52px; bottom: 0;
+      width: 260px;
+      z-index: 100;
+      background: rgba(13, 17, 23, 0.88);
+      border-left: 1px solid rgba(255,255,255,0.07);
+      backdrop-filter: blur(14px);
+      transform: translateX(100%);
+      transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #results.open { transform: translateX(0); }
+
+    /* tab bar */
+    #results-tabs {
+      display: flex;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    }
+    .results-tab {
+      flex: 1;
+      padding: 10px 0;
+      font-size: 11px;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #8b949e;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .results-tab.active { color: #58a6ff; border-bottom-color: #388bfd; }
+
+    #results-header {
+      padding: 10px 16px 8px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #8b949e;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    #results-count {
+      background: rgba(255,255,255,0.08);
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-size: 11px;
+      text-transform: none;
+      letter-spacing: 0;
+      color: #e6edf3;
+    }
+
+    #tab-objects { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+    #tab-frames  { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+    #tab-objects.active { display: flex; }
+    #tab-frames.active  { display: flex; }
+
+    #results-list { overflow-y: auto; flex: 1; padding: 8px 0; }
+
+    /* frame grid */
+    #frames-grid {
+      overflow-y: auto;
+      flex: 1;
+      padding: 8px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4px;
+      align-content: start;
+    }
+    .frame-thumb {
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: 4px;
+      cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.06);
+      transition: border-color 0.15s, transform 0.1s;
+    }
+    .frame-thumb:hover { border-color: #388bfd; transform: scale(1.03); }
+
+    /* lightbox */
+    #lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 400;
+      background: rgba(0,0,0,0.88);
+      align-items: center;
+      justify-content: center;
+    }
+    #lightbox.open { display: flex; }
+    #lightbox img {
+      max-width: 90vw;
+      max-height: 90vh;
+      border-radius: 6px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+    }
+    #lightbox-close {
+      position: absolute;
+      top: 16px; right: 20px;
+      font-size: 28px;
+      color: #fff;
+      cursor: pointer;
+      line-height: 1;
+      opacity: 0.7;
+    }
+    #lightbox-close:hover { opacity: 1; }
+    #lightbox-nav {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+    }
+    .lb-btn {
+      padding: 6px 16px;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .lb-btn:hover { background: rgba(255,255,255,0.2); }
+
+    .result-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 16px;
+      transition: background 0.1s;
+      cursor: default;
+    }
+    .result-item:hover { background: rgba(255,255,255,0.04); }
+    .result-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      box-shadow: 0 0 6px currentColor;
+    }
+    .result-info { flex: 1; min-width: 0; }
+    .result-label {
+      font-size: 13px;
+      text-transform: capitalize;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .result-pos {
+      font-size: 10px;
+      color: #6e7681;
+      font-family: "SF Mono", "Fira Code", monospace;
+      margin-top: 1px;
+    }
+
+    /* ── Status bar ───────────────────────────────────────────────────────── */
+    #status-bar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      padding: 7px 16px;
+      background: rgba(13, 17, 23, 0.92);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      font-size: 12px;
+      color: #8b949e;
+      backdrop-filter: blur(10px);
+      pointer-events: none;
+      white-space: nowrap;
+      max-width: calc(100vw - 280px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: opacity 0.3s;
+    }
+
+    /* ── Loading overlay ──────────────────────────────────────────────────── */
+    #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: #0d1117;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      transition: opacity 0.4s;
+    }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+
+    .spinner {
+      width: 28px; height: 28px;
+      border: 2px solid rgba(255,255,255,0.08);
+      border-top-color: #58a6ff;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-msg { font-size: 13px; color: #8b949e; }
+
+    /* ── Drop overlay ─────────────────────────────────────────────────────── */
+    #drop-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      background: rgba(56, 139, 253, 0.07);
+      border: 2px dashed rgba(56, 139, 253, 0.6);
+      margin: 10px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      font-weight: 600;
+      color: #58a6ff;
+      letter-spacing: -0.2px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    #drop-overlay.visible { opacity: 1; }
+
+    /* ── 3D label styles (CSS2DRenderer) ──────────────────────────────────── */
+    .bbox-label {
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: -apple-system, sans-serif;
+      pointer-events: none;
+      white-space: nowrap;
+      letter-spacing: 0.03em;
+      text-transform: capitalize;
+      background: rgba(13, 17, 23, 0.85);
+      border: 1px solid;
+      backdrop-filter: blur(4px);
+    }
+
+    /* ── Analysing progress bar ───────────────────────────────────────────── */
+    #progress-bar {
+      position: fixed;
+      top: 52px; left: 0; right: 0;
+      height: 2px;
+      z-index: 101;
+      background: transparent;
+      pointer-events: none;
+    }
+    #progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #388bfd, #58a6ff);
+      transition: width 0.4s ease;
+      box-shadow: 0 0 8px #388bfd;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <div id="topbar">
+    <div class="logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+        <line x1="12" y1="22" x2="12" y2="15.5"/>
+        <polyline points="22 8.5 12 15.5 2 8.5"/>
+      </svg>
+      Splat Analyzer
+    </div>
+    <div class="sep"></div>
+    <label id="file-label" for="file-input">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 018 4.25V1.5H3.75zm6.75.5v2.25c0 .138.112.25.25.25h2.25L10.5 2z"/>
+      </svg>
+      Open Splat
+    </label>
+    <input type="file" id="file-input" accept=".ply,.splat,.spz,.sogs,.ksplat" style="display:none">
+    <span id="filename">No file selected</span>
+    <div class="sep"></div>
+    <input id="prompt" type="text"
+      placeholder="Objects to detect: sofa, TV, chair…"
+      value="television, sofa, armchair, air conditioner">
+    <button id="analyze-btn" disabled>Analyze →</button>
+  </div>
+
+  <!-- Progress bar (under topbar) -->
+  <div id="progress-bar"><div id="progress-fill"></div></div>
+
+  <!-- Results panel -->
+  <div id="results">
+    <div id="results-tabs">
+      <div class="results-tab active" data-tab="objects">Objects</div>
+      <div class="results-tab" data-tab="frames">Frames</div>
+    </div>
+    <div id="tab-objects" class="active">
+      <div id="results-header">
+        Detected Objects
+        <span id="results-count">0</span>
+      </div>
+      <div id="results-list"></div>
+    </div>
+    <div id="tab-frames">
+      <div id="results-header" style="padding-top:10px;">
+        Rendered Views
+        <span id="frames-count" style="background:rgba(255,255,255,0.08);padding:2px 7px;border-radius:10px;font-size:11px;color:#e6edf3;">0</span>
+      </div>
+      <div id="frames-grid"></div>
+    </div>
+  </div>
+
+  <!-- Lightbox -->
+  <div id="lightbox">
+    <span id="lightbox-close">&times;</span>
+    <img id="lightbox-img" src="" alt="">
+    <div id="lightbox-nav">
+      <button class="lb-btn" id="lb-prev">&#8592; Prev</button>
+      <span id="lb-index" style="color:#8b949e;font-size:12px;align-self:center;"></span>
+      <button class="lb-btn" id="lb-next">Next &#8594;</button>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div id="status-bar">Drop a .ply file or click Open Splat</div>
+
+  <!-- Drop overlay -->
+  <div id="drop-overlay">Drop your .ply here</div>
+
+  <!-- Loading overlay -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <span id="loading-msg">Starting up…</span>
+  </div>
+
+  <!-- Three.js canvas target -->
+  <div id="viewport"></div>
+
+  <!-- ── Import map ──────────────────────────────────────────────────────── -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.179.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.179.0/examples/jsm/",
+      "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.0.0/spark.module.js"
+    }
+  }
+  </script>
+
+  <!-- ── App ────────────────────────────────────────────────────────────── -->
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+    import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
+
+    const API = "http://89.169.103.48:8000";
+
+    // ─── Label colour map ───────────────────────────────────────────────────
+    const COLOURS = {
+      television: "#00e5ff", tv: "#00e5ff", monitor: "#00e5ff", screen: "#00e5ff",
+      sofa: "#00ff88", couch: "#00ff88",
+      armchair: "#ffaa00", chair: "#ffaa00",
+      desk: "#ff69b4", table: "#ff69b4",
+      "air conditioner": "#4488ff", ac: "#4488ff",
+      bed: "#c084fc", cabinet: "#e879f9", wardrobe: "#e879f9",
+      lamp: "#fde047", light: "#fde047",
+      refrigerator: "#67e8f9", fridge: "#67e8f9",
+    };
+    function labelColour(label) {
+      const l = label.toLowerCase();
+      for (const [k, v] of Object.entries(COLOURS)) if (l.includes(k)) return v;
+      return "#ffffff";
+    }
+
+    // ─── Three.js setup ─────────────────────────────────────────────────────
+    const viewport = document.getElementById("viewport");
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    viewport.appendChild(renderer.domElement);
+
+    // CSS2D renderer for 3D labels
+    const labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(window.innerWidth, window.innerHeight);
+    labelRenderer.domElement.style.cssText =
+      "position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:50;";
+    document.body.appendChild(labelRenderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0d1117);
+
+    const camera = new THREE.PerspectiveCamera(
+      60, window.innerWidth / window.innerHeight, 0.01, 2000
+    );
+    camera.position.set(0, 2, 10);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+    controls.minDistance = 0.2;
+    controls.maxDistance = 500;
+    controls.target.set(0, 0.5, 0);
+    controls.update();
+
+    // SparkRenderer handles Gaussian splat rasterization
+    const spark = new SparkRenderer({ renderer });
+    scene.add(spark);
+
+    // Box group (all bounding boxes + labels go here)
+    const boxGroup = new THREE.Group();
+    scene.add(boxGroup);
+
+    // ─── Render loop ─────────────────────────────────────────────────────────
+    renderer.setAnimationLoop(() => {
+      controls.update();
+      renderer.render(scene, camera);
+      labelRenderer.render(scene, camera);
+    });
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      labelRenderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ─── State ───────────────────────────────────────────────────────────────
+    let currentSplat = null;
+    let loadedFile = null;
+    let analysing = false;
+
+    // ─── UI refs ─────────────────────────────────────────────────────────────
+    const fileInput    = document.getElementById("file-input");
+    const promptInput  = document.getElementById("prompt");
+    const analyzeBtn   = document.getElementById("analyze-btn");
+    const statusBar    = document.getElementById("status-bar");
+    const resultsPanel = document.getElementById("results");
+    const resultsList  = document.getElementById("results-list");
+    const resultsCount = document.getElementById("results-count");
+    const framesGrid   = document.getElementById("frames-grid");
+    const framesCount  = document.getElementById("frames-count");
+    const filenameEl   = document.getElementById("filename");
+    const loadingEl    = document.getElementById("loading");
+    const loadingMsg   = document.getElementById("loading-msg");
+    const dropOverlay  = document.getElementById("drop-overlay");
+    const progressFill = document.getElementById("progress-fill");
+    const lightbox     = document.getElementById("lightbox");
+    const lightboxImg  = document.getElementById("lightbox-img");
+    const lbIndex      = document.getElementById("lb-index");
+
+    // ── Tab switching ─────────────────────────────────────────────────────────
+    let currentFrameUrls = [];
+    let lightboxIdx = 0;
+
+    document.querySelectorAll(".results-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".results-tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll("#tab-objects, #tab-frames").forEach(p => p.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+      });
+    });
+
+    // ── Lightbox ──────────────────────────────────────────────────────────────
+    function openLightbox(idx) {
+      lightboxIdx = idx;
+      lightboxImg.src = API + currentFrameUrls[idx];
+      lbIndex.textContent = `${idx + 1} / ${currentFrameUrls.length}`;
+      lightbox.classList.add("open");
+    }
+    document.getElementById("lightbox-close").addEventListener("click", () => lightbox.classList.remove("open"));
+    lightbox.addEventListener("click", (e) => { if (e.target === lightbox) lightbox.classList.remove("open"); });
+    document.getElementById("lb-prev").addEventListener("click", () =>
+      openLightbox((lightboxIdx - 1 + currentFrameUrls.length) % currentFrameUrls.length));
+    document.getElementById("lb-next").addEventListener("click", () =>
+      openLightbox((lightboxIdx + 1) % currentFrameUrls.length));
+    document.addEventListener("keydown", (e) => {
+      if (!lightbox.classList.contains("open")) return;
+      if (e.key === "ArrowLeft")  openLightbox((lightboxIdx - 1 + currentFrameUrls.length) % currentFrameUrls.length);
+      if (e.key === "ArrowRight") openLightbox((lightboxIdx + 1) % currentFrameUrls.length);
+      if (e.key === "Escape")     lightbox.classList.remove("open");
+    });
+
+    const setStatus  = (msg) => { statusBar.textContent = msg; };
+    const showLoad   = (msg) => { loadingMsg.textContent = msg; loadingEl.classList.remove("hidden"); };
+    const hideLoad   = ()    => { loadingEl.classList.add("hidden"); };
+    const setProgress = (pct) => { progressFill.style.width = pct + "%"; };
+
+    // ─── Clear bounding boxes ────────────────────────────────────────────────
+    function clearBoxes() {
+      boxGroup.clear();
+      resultsList.innerHTML = "";
+      framesGrid.innerHTML = "";
+      resultsCount.textContent = "0";
+      framesCount.textContent = "0";
+      currentFrameUrls = [];
+      resultsPanel.classList.remove("open");
+    }
+
+    // ─── Load splat from File ────────────────────────────────────────────────
+    async function loadSplat(file) {
+      if (currentSplat) { scene.remove(currentSplat); currentSplat = null; }
+      clearBoxes();
+      showLoad(`Loading ${file.name}…`);
+      setStatus(`Reading ${file.name}…`);
+
+      const bytes = await file.arrayBuffer();
+
+      currentSplat = new SplatMesh({
+        fileBytes: bytes,
+        fileName: file.name,
+        onLoad: async (mesh) => {
+          // 3DGS scenes are stored in OpenCV convention (Y-down).
+          // Flip 180° around X to convert to Three.js Y-up world space.
+          mesh.rotation.x = Math.PI;
+          hideLoad();
+          const mb = (file.size / 1048576).toFixed(1);
+          setStatus(`${file.name} — ${mb} MB  ·  orbit with mouse  ·  click Analyze to detect objects`);
+
+          // Frame camera on the loaded content
+          try {
+            const box = new THREE.Box3().setFromObject(mesh);
+            if (!box.isEmpty()) {
+              const center = box.getCenter(new THREE.Vector3());
+              const size   = box.getSize(new THREE.Vector3());
+              const maxDim = Math.max(size.x, size.y, size.z);
+              controls.target.copy(center);
+              camera.position.copy(center).addScaledVector(
+                new THREE.Vector3(0.2, 0.3, 1).normalize(), maxDim * 2
+              );
+              controls.update();
+            }
+          } catch (_) { /* SplatMesh may not have geometry bounds immediately */ }
+        },
+      });
+
+      scene.add(currentSplat);
+    }
+
+    // ─── Add bounding boxes from API response ────────────────────────────────
+    function addBoxes(interactions, frameUrls) {
+      clearBoxes();
+
+      // ── Frame gallery ────────────────────────────────────────────────────
+      if (frameUrls && frameUrls.length) {
+        currentFrameUrls = frameUrls;
+        framesCount.textContent = String(frameUrls.length);
+        frameUrls.forEach((url, i) => {
+          const img = document.createElement("img");
+          img.className = "frame-thumb";
+          img.src = API + url;
+          img.loading = "lazy";
+          img.title = `Frame ${i + 1}`;
+          img.addEventListener("click", () => openLightbox(i));
+          framesGrid.appendChild(img);
+        });
+      }
+
+      if (!interactions.length) {
+        setStatus("No objects found — try adjusting your prompt.");
+        return;
+      }
+
+      interactions.forEach((item) => {
+        const col = new THREE.Color(labelColour(item.label));
+        const hex = labelColour(item.label);
+
+        // The splat has rotation.x = Math.PI to flip it right-side up (3DGS uses
+        // OpenCV Y-down; Three.js uses Y-up). Apply the same flip to box positions
+        // so they sit in the same display space as the rendered splat.
+        const px =  item.position.x;
+        const py = -item.position.y;
+        const pz = -item.position.z;
+
+        const { x: sx, y: sy, z: sz } = item.scale;
+        const { x: rx, y: ry, z: rz, w: rw } = item.rotation;
+        const quat = new THREE.Quaternion(rx, -ry, -rz, rw); // conjugate Y/Z axes too
+
+        // Wireframe edges
+        const edgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(sx, sy, sz));
+        const edgeMat = new THREE.LineBasicMaterial({ color: col });
+        const lines   = new THREE.LineSegments(edgeGeo, edgeMat);
+        lines.position.set(px, py, pz);
+        lines.quaternion.copy(quat);
+        boxGroup.add(lines);
+
+        // Transparent fill
+        const fillMat = new THREE.MeshBasicMaterial({
+          color: col, transparent: true, opacity: 0.06,
+          side: THREE.DoubleSide, depthWrite: false,
+        });
+        const fill = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), fillMat);
+        fill.position.set(px, py, pz);
+        fill.quaternion.copy(quat);
+        boxGroup.add(fill);
+
+        // CSS2D label at top-centre of box
+        const div = document.createElement("div");
+        div.className = "bbox-label";
+        div.textContent = item.label;
+        div.style.color = hex;
+        div.style.borderColor = hex + "55";
+        const label = new CSS2DObject(div);
+        label.position.set(px, py + sy / 2 + 0.12, pz);
+        boxGroup.add(label);
+
+        // Results panel row
+        const row = document.createElement("div");
+        row.className = "result-item";
+        row.innerHTML = `
+          <div class="result-dot" style="background:${hex};box-shadow:0 0 6px ${hex};"></div>
+          <div class="result-info">
+            <div class="result-label">${item.label}</div>
+            <div class="result-pos">${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)}</div>
+          </div>`;
+        resultsList.appendChild(row);
+      });
+
+      resultsCount.textContent = String(interactions.length);
+      resultsPanel.classList.add("open");
+      setStatus(`Found ${interactions.length} object${interactions.length !== 1 ? "s" : ""}`);
+    }
+
+    // ─── Analyse ─────────────────────────────────────────────────────────────
+    async function analyse() {
+      if (!loadedFile || analysing) return;
+      analysing = true;
+      analyzeBtn.disabled = true;
+      analyzeBtn.classList.add("loading");
+      analyzeBtn.textContent = "Analysing…";
+      clearBoxes();
+      setProgress(0);
+
+      // Animate indeterminate progress while waiting
+      let pct = 5;
+      const ticker = setInterval(() => {
+        pct = Math.min(pct + (95 - pct) * 0.04, 90);
+        setProgress(pct);
+      }, 800);
+
+      setStatus("Uploading & processing on server — this takes ~60–90 s…");
+
+      try {
+        const form = new FormData();
+        form.append("file", loadedFile);
+        form.append("prompt", promptInput.value);
+
+        const t0  = Date.now();
+        const res = await fetch(`${API}/generate_interactions`, { method: "POST", body: form });
+
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(`Server error ${res.status}: ${err.slice(0, 200)}`);
+        }
+
+        const data = await res.json();
+        console.log("[SplatAnalyzer] raw response:", JSON.stringify(data, null, 2));
+        // Support both new {objects, frames} shape and legacy plain array
+        const interactions = Array.isArray(data) ? data : (data.objects ?? []);
+        const frameUrls    = Array.isArray(data) ? []   : (data.frames  ?? []);
+        const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+        clearInterval(ticker);
+        setProgress(100);
+        setTimeout(() => setProgress(0), 800);
+
+        addBoxes(interactions, frameUrls);
+        setStatus(`Done in ${elapsed}s — ${interactions.length} object${interactions.length !== 1 ? "s" : ""} detected`);
+      } catch (err) {
+        clearInterval(ticker);
+        setProgress(0);
+        setStatus(`Error: ${err.message}`);
+        console.error(err);
+      } finally {
+        analysing = false;
+        analyzeBtn.disabled = false;
+        analyzeBtn.classList.remove("loading");
+        analyzeBtn.textContent = "Analyze →";
+      }
+    }
+
+    // ─── File handling ────────────────────────────────────────────────────────
+    async function handleFile(file) {
+      if (!file) return;
+      loadedFile = file;
+      filenameEl.textContent = file.name;
+      analyzeBtn.disabled = false;
+      await loadSplat(file);
+    }
+
+    fileInput.addEventListener("change", (e) => handleFile(e.target.files[0]));
+    analyzeBtn.addEventListener("click", analyse);
+
+    // Drag-and-drop
+    document.addEventListener("dragover",  (e) => { e.preventDefault(); dropOverlay.classList.add("visible"); });
+    document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) dropOverlay.classList.remove("visible"); });
+    document.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropOverlay.classList.remove("visible");
+      const file = e.dataTransfer?.files[0];
+      if (file) handleFile(file);
+    });
+
+    // Ready
+    hideLoad();
+    setStatus("Drop a .ply file or click Open Splat");
+  </script>
+</body>
+</html>

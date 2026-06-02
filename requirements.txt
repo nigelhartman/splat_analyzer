@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-multipart
+torch
+torchvision
+gsplat
+transformers
+numpy
+imageio
+plyfile
+opencv-python
+Pillow
+scipy
