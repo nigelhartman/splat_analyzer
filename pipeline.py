@@ -98,12 +98,14 @@ def _cluster_detections(detections, eps_m=0.5, max_per_label=2,
             cluster_pos   = (positions[cluster_idx] * scores[cluster_idx, None]).sum(0) / scores[cluster_idx].sum()
             cluster_scale = np.median(scales[cluster_idx], axis=0)
             cluster_scale = np.maximum(cluster_scale, 0.1)
-            clusters.append((peak_score, vote_count, label, cluster_pos, cluster_scale))
+            # Carry the raw member dicts so callers can trace back to source frames
+            member_dets = [dets[j] for j in cluster_idx]
+            clusters.append((peak_score, vote_count, label, cluster_pos, cluster_scale, member_dets))
 
         clusters.sort(key=lambda c: c[0], reverse=True)
-        for peak, votes, lbl, pos, scale in clusters[:max_per_label]:
+        for peak, votes, lbl, pos, scale, members in clusters[:max_per_label]:
             print(f"  [cluster] {lbl}: {votes} votes, peak={peak:.2f}, pos={pos.round(2)}")
-            results.append((lbl, pos, scale))
+            results.append((lbl, pos, scale, members))
 
     return results
 
@@ -142,7 +144,7 @@ def _run_owlv2(frames_dir: Path, labels: list[str], transforms: dict, scene_radi
     scene_center  = np.array(transforms.get("scene_center", [0.0, 0.0, 0.0]))
     stored_radius = transforms.get("scene_radius", scene_radius)
 
-    for frame_meta in transforms["frames"]:
+    for frame_idx, frame_meta in enumerate(transforms["frames"]):
         frame_path = frames_dir.parent / frame_meta["file_path"]
         if not frame_path.exists():
             continue
@@ -179,17 +181,17 @@ def _run_owlv2(frames_dir: Path, labels: list[str], transforms: dict, scene_radi
 
         for box, score, lid in zip(boxes, scores, label_ids):
             label = labels[lid].strip()
-            x1, y1, x2, y2 = box
-            cx_px = int(np.clip((x1 + x2) / 2, 0, W - 1))
-            cy_px = int(np.clip((y1 + y2) / 2, 0, H - 1))
+            bx1, by1, bx2, by2 = box          # original pixel coords (kept for box_2d)
+            cx_px = int(np.clip((bx1 + bx2) / 2, 0, W - 1))
+            cy_px = int(np.clip((by1 + by2) / 2, 0, H - 1))
 
             # Sample depth from a 5×5 patch around the box centre and take the
             # median of valid (non-zero) pixels — more robust than a single pixel.
             if depth_map is not None:
                 h5, w5 = depth_map.shape
-                y0 = max(0, cy_px - 2); y1 = min(h5, cy_px + 3)
-                x0 = max(0, cx_px - 2); x1 = min(w5, cx_px + 3)
-                patch = depth_map[y0:y1, x0:x1].ravel()
+                py0 = max(0, cy_px - 2); py1 = min(h5, cy_px + 3)
+                px0 = max(0, cx_px - 2); px1 = min(w5, cx_px + 3)
+                patch = depth_map[py0:py1, px0:px1].ravel()
                 valid = patch[patch > 0.01]
                 sampled = float(np.median(valid)) if valid.size > 0 else 0.0
                 box_depth = sampled if sampled > 0.01 else fallback_depth
@@ -201,10 +203,12 @@ def _run_owlv2(frames_dir: Path, labels: list[str], transforms: dict, scene_radi
             world_d = (world_w + world_h) / 2.0
 
             raw_detections.append({
-                "label":    label,
-                "score":    float(score),
-                "position": world_pos,
-                "scale":    np.array([world_w, world_h, world_d]),
+                "label":     label,
+                "score":     float(score),
+                "position":  world_pos,
+                "scale":     np.array([world_w, world_h, world_d]),
+                "frame_idx": frame_idx,
+                "box_2d":    [float(bx1), float(by1), float(bx2), float(by2)],
             })
             print(f"  [detect] {label} ({score:.2f}) depth={box_depth:.2f} "
                   f"@ {world_pos.round(3)} {frame_path.name}")
@@ -240,6 +244,8 @@ def run_pipeline(ply_path: str, prompt: str, job_dir: str) -> list[dict]:
     print(f"[pipeline] Step 2: Detecting {labels} in {len(transforms['frames'])} frames …")
     raw_detections = _run_owlv2(frames_dir, labels, transforms, scene_radius)
 
+    frame_annotations: dict = {}   # frame_idx (str) → [{label, object_idx, box, score}]
+
     if not raw_detections:
         print("[pipeline] No detections above threshold.")
         interactions = []
@@ -254,17 +260,41 @@ def run_pipeline(ply_path: str, prompt: str, job_dir: str) -> list[dict]:
         )
 
         interactions = []
-        for label, pos, scale in clustered:
+        for obj_idx, (label, pos, scale, members) in enumerate(clustered):
+            # Deduplicate members by frame_idx (keep highest-score per frame)
+            best: dict = {}
+            for m in members:
+                fi = m["frame_idx"]
+                if fi not in best or m["score"] > best[fi]["score"]:
+                    best[fi] = m
+
+            obj_frames = []
+            for m in sorted(best.values(), key=lambda x: x["score"], reverse=True):
+                fi = m["frame_idx"]
+                obj_frames.append({
+                    "frame_idx": fi,
+                    "box":       m["box_2d"],
+                    "score":     round(m["score"], 4),
+                })
+                fkey = str(fi)
+                frame_annotations.setdefault(fkey, []).append({
+                    "label":      label,
+                    "object_idx": obj_idx,
+                    "box":        m["box_2d"],
+                    "score":      round(m["score"], 4),
+                })
+
             interactions.append({
                 "label":    label,
                 "position": {"x": float(pos[0]), "y": float(pos[1]), "z": float(pos[2])},
                 "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
                 "scale":    {"x": float(scale[0]), "y": float(scale[1]), "z": float(scale[2])},
+                "frames":   obj_frames,
             })
 
     output_path = job_dir / "interactions.json"
     with open(output_path, "w") as f:
-        json.dump(interactions, f, indent=2)
+        json.dump({"objects": interactions, "frame_annotations": frame_annotations}, f, indent=2)
 
     print(f"[pipeline] Done → {output_path} ({len(interactions)} objects)")
     return interactions

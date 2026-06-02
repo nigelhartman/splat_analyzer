@@ -111,7 +111,15 @@ async def generate_interactions(
         raise HTTPException(status_code=500, detail="Pipeline produced no output file.")
 
     with open(result_path) as f:
-        interactions = json.load(f)
+        raw = json.load(f)
+
+    # Support both new {"objects":…,"frame_annotations":…} and legacy plain-list format
+    if isinstance(raw, dict):
+        interactions      = raw.get("objects", [])
+        frame_annotations = raw.get("frame_annotations", {})
+    else:
+        interactions      = raw
+        frame_annotations = {}
 
     ply_path.unlink(missing_ok=True)
 
@@ -137,11 +145,12 @@ async def generate_interactions(
                 f"{len(rgb_frames)} frames, {len(camera_groups)} camera positions")
 
     return JSONResponse(content={
-        "objects":       interactions,
-        "job_id":        job_id,
-        "frames":        frame_urls,
-        "depth_frames":  depth_urls,
-        "camera_groups": camera_groups,
+        "objects":            interactions,
+        "job_id":             job_id,
+        "frames":             frame_urls,
+        "depth_frames":       depth_urls,
+        "camera_groups":      camera_groups,
+        "frame_annotations":  frame_annotations,
     })
 
 

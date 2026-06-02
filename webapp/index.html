@@ -228,6 +228,15 @@
       font-size: 10px; color: #6e7681;
       font-family: "SF Mono", "Fira Code", monospace; margin-top: 1px;
     }
+    .result-frames-btn {
+      margin-top: 4px; padding: 2px 8px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 4px; color: #8b949e; font-size: 10px;
+      cursor: pointer; white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
+    }
+    .result-frames-btn:hover { background: rgba(56,139,253,0.12); color: #58a6ff; border-color: #388bfd; }
 
     /* ── Lightbox ─────────────────────────────────────────────────────────── */
     #lightbox {
@@ -236,14 +245,23 @@
       align-items: center; justify-content: center;
     }
     #lightbox.open { display: flex; }
-    #lightbox img {
+    #lightbox-content {
+      position: relative; display: inline-block;
       max-width: 90vw; max-height: 90vh;
+    }
+    #lightbox-img {
+      display: block; max-width: 90vw; max-height: 90vh;
       border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+    }
+    #lightbox-canvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none; border-radius: 6px;
     }
     #lightbox-close {
       position: absolute; top: 16px; right: 20px;
       font-size: 28px; color: #fff; cursor: pointer;
-      line-height: 1; opacity: 0.7;
+      line-height: 1; opacity: 0.7; z-index: 1;
     }
     #lightbox-close:hover { opacity: 1; }
     #lightbox-nav {
@@ -410,7 +428,10 @@
   <!-- Lightbox -->
   <div id="lightbox">
     <span id="lightbox-close">&times;</span>
-    <img id="lightbox-img" src="" alt="">
+    <div id="lightbox-content">
+      <img id="lightbox-img" src="" alt="">
+      <canvas id="lightbox-canvas"></canvas>
+    </div>
     <div id="lightbox-nav">
       <button class="lb-btn" id="lb-prev">&#8592; Prev</button>
       <span id="lb-index" style="color:#8b949e;font-size:12px;align-self:center;"></span>
@@ -591,16 +612,18 @@
     });
 
     // ─── State ───────────────────────────────────────────────────────────────
-    let currentSplat     = null;
-    let loadedFile       = null;
-    let analysing        = false;
-    let currentJobId     = null;
-    let currentRgbUrls   = [];
-    let currentDepthUrls = [];
-    let showingDepth     = false;
-    let lightboxIdx      = 0;
-    let lightboxUrls     = [];
-    let cameraGroupsData = [];
+    let currentSplat        = null;
+    let loadedFile          = null;
+    let analysing           = false;
+    let currentJobId        = null;
+    let currentRgbUrls      = [];
+    let currentDepthUrls    = [];
+    let showingDepth        = false;
+    let lightboxIdx         = 0;
+    let lightboxUrls        = [];
+    let lightboxAnnotMap    = null;  // url → [{label,object_idx,box,score}] or null
+    let cameraGroupsData    = [];
+    let frameAnnotationsData = {};   // frame_idx (str) → [{label,object_idx,box,score}]
 
     // ─── UI refs ─────────────────────────────────────────────────────────────
     const fileInput    = document.getElementById("file-input");
@@ -619,9 +642,10 @@
     const loadingMsg   = document.getElementById("loading-msg");
     const dropOverlay  = document.getElementById("drop-overlay");
     const progressFill = document.getElementById("progress-fill");
-    const lightbox     = document.getElementById("lightbox");
-    const lightboxImg  = document.getElementById("lightbox-img");
-    const lbIndex      = document.getElementById("lb-index");
+    const lightbox       = document.getElementById("lightbox");
+    const lightboxImg    = document.getElementById("lightbox-img");
+    const lightboxCanvas = document.getElementById("lightbox-canvas");
+    const lbIndex        = document.getElementById("lb-index");
     const toggleRgb    = document.getElementById("toggle-rgb");
     const toggleDepth  = document.getElementById("toggle-depth");
 
@@ -667,17 +691,76 @@
       });
     }
 
+    // ── Canvas box overlay ────────────────────────────────────────────────────
+    function drawLightboxBoxes() {
+      const ctx = lightboxCanvas.getContext("2d");
+      // Images are always rendered at 512×512; use that as the canvas resolution
+      lightboxCanvas.width  = 512;
+      lightboxCanvas.height = 512;
+      ctx.clearRect(0, 0, 512, 512);
+
+      if (!lightboxAnnotMap) return;
+      const url = API + lightboxUrls[lightboxIdx];
+      const annots = lightboxAnnotMap[url];
+      if (!annots || !annots.length) return;
+
+      for (const det of annots) {
+        const [x1, y1, x2, y2] = det.box;
+        const color = labelColour(det.label);
+
+        // Box outline
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+        // Label pill
+        const txt = `${det.label}  ${Math.round(det.score * 100)}%`;
+        ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, sans-serif";
+        const tw = ctx.measureText(txt).width;
+        const lh = 18;
+        const lx = x1, ly = Math.max(y1 - lh, 0);
+        ctx.fillStyle = "rgba(13,17,23,0.82)";
+        ctx.fillRect(lx, ly, tw + 8, lh);
+        ctx.fillStyle = color;
+        ctx.fillText(txt, lx + 4, ly + lh - 4);
+      }
+    }
+
     // ── Lightbox ───────────────────────────────────────────────────────────────
     function openLightbox(idx) {
       lightboxIdx = ((idx % lightboxUrls.length) + lightboxUrls.length) % lightboxUrls.length;
       lightboxImg.src = API + lightboxUrls[lightboxIdx];
       lbIndex.textContent = `${lightboxIdx + 1} / ${lightboxUrls.length}`;
       lightbox.classList.add("open");
+      // Draw once image loads (and immediately if already cached)
+      lightboxImg.onload = drawLightboxBoxes;
+      if (lightboxImg.complete && lightboxImg.naturalWidth > 0) drawLightboxBoxes();
     }
-    document.getElementById("lightbox-close").addEventListener("click",
-      () => lightbox.classList.remove("open"));
+    // Open lightbox showing the frames where a specific object was detected,
+    // with 2D box annotations overlaid.
+    function openObjectFrames(obj) {
+      if (!obj.frames || !obj.frames.length) return;
+      lightboxUrls    = obj.frames.map(f =>
+        `/jobs/${currentJobId}/frames/frame_${String(f.frame_idx).padStart(4, "0")}.png`
+      );
+      lightboxAnnotMap = {};
+      obj.frames.forEach((f, i) => {
+        const url = API + lightboxUrls[i];
+        lightboxAnnotMap[url] = frameAnnotationsData[String(f.frame_idx)] || [];
+      });
+      openLightbox(0);
+    }
+
+    function closeLightbox() {
+      lightbox.classList.remove("open");
+      lightboxAnnotMap = null;
+      const ctx = lightboxCanvas.getContext("2d");
+      ctx.clearRect(0, 0, lightboxCanvas.width, lightboxCanvas.height);
+    }
+
+    document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
     lightbox.addEventListener("click", (e) => {
-      if (e.target === lightbox) lightbox.classList.remove("open");
+      if (e.target === lightbox) closeLightbox();
     });
     document.getElementById("lb-prev").addEventListener("click",
       () => openLightbox(lightboxIdx - 1));
@@ -687,7 +770,7 @@
       if (!lightbox.classList.contains("open")) return;
       if (e.key === "ArrowLeft")  openLightbox(lightboxIdx - 1);
       if (e.key === "ArrowRight") openLightbox(lightboxIdx + 1);
-      if (e.key === "Escape")     lightbox.classList.remove("open");
+      if (e.key === "Escape")     closeLightbox();
     });
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -729,8 +812,9 @@
       camerasCount.textContent  = "0";
       currentRgbUrls    = [];
       currentDepthUrls  = [];
-      cameraGroupsData  = [];
-      currentJobId      = null;
+      cameraGroupsData     = [];
+      frameAnnotationsData = {};
+      currentJobId         = null;
       resultsPanel.classList.remove("open");
     }
 
@@ -838,12 +922,13 @@
     }
 
     // ─── Add bounding boxes + populate panels ────────────────────────────────
-    function addBoxes(interactions, frameUrls, depthUrls, groups) {
+    function addBoxes(interactions, frameUrls, depthUrls, groups, frameAnnots) {
       clearBoxes();
-      currentJobId     = interactions._jobId;  // stashed below
-      currentRgbUrls   = frameUrls;
-      currentDepthUrls = depthUrls;
-      cameraGroupsData = groups;
+      currentJobId         = interactions._jobId;
+      currentRgbUrls       = frameUrls;
+      currentDepthUrls     = depthUrls;
+      cameraGroupsData     = groups;
+      frameAnnotationsData = frameAnnots || {};
 
       // Frames tab
       if (frameUrls.length) {
@@ -911,12 +996,20 @@
 
         const row = document.createElement("div");
         row.className = "result-item";
+        const frameCount = item.frames ? item.frames.length : 0;
         row.innerHTML = `
           <div class="result-dot" style="background:${hex};box-shadow:0 0 6px ${hex};"></div>
           <div class="result-info">
             <div class="result-label">${item.label}</div>
             <div class="result-pos">${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)}</div>
+            ${frameCount ? `<button class="result-frames-btn">${frameCount} frames ›</button>` : ""}
           </div>`;
+        if (frameCount) {
+          row.querySelector(".result-frames-btn").addEventListener("click", (e) => {
+            e.stopPropagation();
+            openObjectFrames(item);
+          });
+        }
         resultsList.appendChild(row);
       });
 
@@ -960,11 +1053,12 @@
         const data = await res.json();
         console.log("[SplatAnalyzer] raw response:", JSON.stringify(data, null, 2));
 
-        const interactions  = Array.isArray(data) ? data  : (data.objects       ?? []);
-        const frameUrls     = Array.isArray(data) ? []    : (data.frames        ?? []);
-        const depthUrls     = Array.isArray(data) ? []    : (data.depth_frames  ?? []);
-        const groups        = Array.isArray(data) ? []    : (data.camera_groups ?? []);
-        const jobId         = Array.isArray(data) ? null  : (data.job_id        ?? null);
+        const interactions  = Array.isArray(data) ? data  : (data.objects            ?? []);
+        const frameUrls     = Array.isArray(data) ? []    : (data.frames             ?? []);
+        const depthUrls     = Array.isArray(data) ? []    : (data.depth_frames       ?? []);
+        const groups        = Array.isArray(data) ? []    : (data.camera_groups      ?? []);
+        const frameAnnots   = Array.isArray(data) ? {}    : (data.frame_annotations  ?? {});
+        const jobId         = Array.isArray(data) ? null  : (data.job_id             ?? null);
         const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
         clearInterval(ticker);
@@ -975,7 +1069,7 @@
         interactions._jobId = jobId;
         currentJobId = jobId;
 
-        addBoxes(interactions, frameUrls, depthUrls, groups);
+        addBoxes(interactions, frameUrls, depthUrls, groups, frameAnnots);
         setStatus(`Done in ${elapsed}s — ${interactions.length} object${interactions.length !== 1 ? "s" : ""} · ${groups.length} cameras`);
       } catch (err) {
         clearInterval(ticker);
