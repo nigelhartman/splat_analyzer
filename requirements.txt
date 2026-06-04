@@ -4,10 +4,10 @@ python-multipart
 torch
 torchvision
 gsplat
-transformers
+transformers>=4.37,<4.51
 numpy
 imageio
 plyfile
-opencv-python
+opencv-python-headless
 Pillow
 scipy

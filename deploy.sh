@@ -116,7 +116,7 @@ fi
 # Remaining requirements (headless OpenCV on a server)
 "\${RVENV}/bin/pip" install --quiet \
   fastapi "uvicorn[standard]" python-multipart \
-  transformers numpy imageio plyfile \
+  "transformers>=4.37,<4.51" numpy imageio plyfile \
   opencv-python-headless Pillow scipy
 
 echo "  OK: Dependencies ready"
