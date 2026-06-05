@@ -232,6 +232,65 @@
       white-space: nowrap;
     }
     #toggle-all-btn:hover { background: rgba(255,255,255,0.1); color: #e6edf3; }
+
+    /* ── Eye button ───────────────────────────────────────────────────────── */
+    .result-eye-btn {
+      padding: 4px 6px; background: transparent; flex-shrink: 0;
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 4px;
+      color: #4a5568; cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .result-eye-btn:hover { color: #58a6ff; border-color: rgba(56,139,253,0.4); background: rgba(56,139,253,0.08); }
+
+    /* ── Settings button + panel ──────────────────────────────────────────── */
+    #settings-btn {
+      display: flex; align-items: center; gap: 5px;
+      padding: 5px 10px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 6px; color: #8b949e; font-size: 12px;
+      cursor: pointer; white-space: nowrap; flex-shrink: 0;
+      transition: background 0.15s, color 0.15s;
+    }
+    #settings-btn:hover, #settings-btn.open { background: rgba(255,255,255,0.1); color: #e6edf3; }
+
+    #settings-panel {
+      display: none; position: fixed;
+      top: 52px; right: 0;
+      width: 252px; z-index: 150;
+      background: rgba(13,17,23,0.97);
+      border-left: 1px solid rgba(255,255,255,0.07);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      backdrop-filter: blur(14px);
+      padding: 14px 16px;
+    }
+    #settings-panel.open { display: block; }
+
+    .settings-section { margin-bottom: 16px; }
+    .settings-section:last-child { margin-bottom: 0; }
+    .settings-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+      color: #6e7681; margin-bottom: 8px;
+    }
+    .settings-row {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+    }
+    .settings-row label { font-size: 12px; color: #8b949e; flex: 1; }
+    .settings-row input[type=range] {
+      flex: 1; accent-color: #388bfd; cursor: pointer;
+    }
+    .settings-row span { font-size: 11px; color: #e6edf3; width: 28px; text-align: right; }
+    .dl-btn {
+      display: flex; align-items: center; gap: 7px;
+      width: 100%; padding: 7px 10px; margin-bottom: 6px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px; color: #e6edf3; font-size: 12px;
+      cursor: pointer; transition: background 0.15s, border-color 0.15s;
+      text-align: left;
+    }
+    .dl-btn:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.2); }
+    .dl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
     .result-info { flex: 1; min-width: 0; }
     .result-label {
       font-size: 13px; text-transform: capitalize;
@@ -393,6 +452,37 @@
       placeholder="Objects to detect: sofa, TV, chair…"
       value="television, sofa, armchair, air conditioner">
     <button id="analyze-btn" disabled>Analyze →</button>
+    <div class="sep"></div>
+    <button id="settings-btn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      Settings
+    </button>
+  </div>
+
+  <!-- Settings panel -->
+  <div id="settings-panel">
+    <div class="settings-section">
+      <div class="settings-label">Display</div>
+      <div class="settings-row">
+        <label>Box line width</label>
+        <input type="range" id="line-width-slider" min="1" max="8" step="0.5" value="2">
+        <span id="line-width-val">2px</span>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">Downloads</div>
+      <button class="dl-btn" id="dl-json-btn" disabled>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Detections JSON
+      </button>
+      <button class="dl-btn" id="dl-frames-btn" disabled>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Raw Frames + Depth (zip)
+      </button>
+    </div>
   </div>
 
   <!-- Progress bar -->
@@ -490,6 +580,9 @@
   <script type="module">
     import * as THREE from "three";
     import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+    import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
+    import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
+    import { LineMaterial } from "three/addons/lines/LineMaterial.js";
     import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
 
     const API = "http://89.169.103.48:8000";
@@ -558,6 +651,7 @@
     viewport.addEventListener("mousedown", (e) => {
       if (e.button === 0) {
         isDragging = true;
+        flyTo = null; // cancel any fly-to
         lastMX = e.clientX;
         lastMY = e.clientY;
         viewport.classList.add("dragging");
@@ -593,7 +687,7 @@
     document.addEventListener("keydown", (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
       const k = e.key.toLowerCase();
-      if (k in moveKeys) { moveKeys[k] = true; e.preventDefault(); }
+      if (k in moveKeys) { moveKeys[k] = true; flyTo = null; e.preventDefault(); }
     });
     document.addEventListener("keyup", (e) => {
       const k = e.key.toLowerCase();
@@ -601,6 +695,16 @@
     });
 
     function updateFPSCamera() {
+      // Fly-to animation (overrides manual movement while active)
+      if (flyTo) {
+        flyTo.t = Math.min(1, flyTo.t + 0.035);
+        const ease = 1 - Math.pow(1 - flyTo.t, 3); // ease-out cubic
+        camera.position.lerpVectors(flyTo.startPos, flyTo.endPos, ease);
+        camera.quaternion.slerpQuaternions(flyTo.startQuat, flyTo.endQuat, ease);
+        camEuler.setFromQuaternion(camera.quaternion, "YXZ");
+        if (flyTo.t >= 1) flyTo = null;
+        return;
+      }
       if (!Object.values(moveKeys).some(Boolean)) return;
       const fwd   = new THREE.Vector3(); camera.getWorldDirection(fwd);
       const right = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
@@ -625,6 +729,9 @@
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
       labelRenderer.setSize(window.innerWidth, window.innerHeight);
+      objectMeshes.forEach(e => {
+        if (e.lineMat) e.lineMat.resolution.set(window.innerWidth, window.innerHeight);
+      });
     });
 
     // ─── State ───────────────────────────────────────────────────────────────
@@ -641,8 +748,11 @@
     let cameraGroupsData    = [];
     let frameAnnotationsData = {};
     // per-object mesh references for visibility toggling
-    // each entry: { meshes: [Three.js objects], visible: true, dot: HTMLElement }
-    let objectMeshes = [];
+    // each entry: { meshes: [Three.js objects], lineMat, visible: true, dot: HTMLElement }
+    let objectMeshes        = [];
+    let currentLineWidth    = 2;
+    let currentDetections   = [];   // raw objects array from last API response
+    let flyTo               = null; // {startPos,endPos,startQuat,endQuat,t}
 
     // ─── UI refs ─────────────────────────────────────────────────────────────
     const fileInput    = document.getElementById("file-input");
@@ -693,6 +803,74 @@
       objectMeshes.forEach((_, i) => setObjectVisible(i, !allVisible));
       toggleAllBtn.textContent = allVisible ? "Show All" : "Hide All";
     });
+
+    // ── Settings panel ────────────────────────────────────────────────────────
+    const settingsBtn   = document.getElementById("settings-btn");
+    const settingsPanel = document.getElementById("settings-panel");
+    const lineWidthSlider = document.getElementById("line-width-slider");
+    const lineWidthVal    = document.getElementById("line-width-val");
+    const dlJsonBtn     = document.getElementById("dl-json-btn");
+    const dlFramesBtn   = document.getElementById("dl-frames-btn");
+
+    settingsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      settingsPanel.classList.toggle("open");
+      settingsBtn.classList.toggle("open", settingsPanel.classList.contains("open"));
+    });
+    document.addEventListener("click", (e) => {
+      if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) {
+        settingsPanel.classList.remove("open");
+        settingsBtn.classList.remove("open");
+      }
+    });
+
+    lineWidthSlider.addEventListener("input", () => {
+      currentLineWidth = parseFloat(lineWidthSlider.value);
+      lineWidthVal.textContent = currentLineWidth + "px";
+      objectMeshes.forEach(entry => {
+        if (entry.lineMat) { entry.lineMat.linewidth = currentLineWidth; }
+      });
+    });
+
+    dlJsonBtn.addEventListener("click", () => {
+      if (!currentDetections.length) return;
+      const payload = { job_id: currentJobId, objects: currentDetections };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const a = Object.assign(document.createElement("a"), {
+        href: URL.createObjectURL(blob), download: "detections.json",
+      });
+      a.click(); URL.revokeObjectURL(a.href);
+    });
+
+    dlFramesBtn.addEventListener("click", () => {
+      if (!currentJobId) return;
+      const a = Object.assign(document.createElement("a"), {
+        href: `${API}/jobs/${currentJobId}/download`,
+        download: `splat_${currentJobId.slice(0,8)}.zip`,
+      });
+      a.click();
+    });
+
+    // ── Fly-to object ─────────────────────────────────────────────────────────
+    function flyToObject(px, py, pz, sx, sy, sz) {
+      const center  = new THREE.Vector3(px, py, pz);
+      const viewDist = Math.max(sx, sy, sz) * 2.8 + 1.5;
+      // Approach from current camera direction toward the object
+      const toObj = center.clone().sub(camera.position);
+      const dir   = toObj.length() > 0.01
+        ? toObj.normalize()
+        : new THREE.Vector3(0, 0, -1);
+      const endPos = center.clone().sub(dir.clone().multiplyScalar(viewDist));
+      // Compute target quaternion without moving the real camera
+      const m = new THREE.Matrix4().lookAt(endPos, center, new THREE.Vector3(0, 1, 0));
+      flyTo = {
+        startPos:  camera.position.clone(),
+        endPos,
+        startQuat: camera.quaternion.clone(),
+        endQuat:   new THREE.Quaternion().setFromRotationMatrix(m),
+        t: 0,
+      };
+    }
 
     // ── Tab switching ──────────────────────────────────────────────────────────
     document.querySelectorAll(".results-tab").forEach(tab => {
@@ -860,8 +1038,11 @@
       cameraGroupsData     = [];
       frameAnnotationsData = {};
       objectMeshes         = [];
+      currentDetections    = [];
       currentJobId         = null;
       toggleAllBtn.textContent = "Hide All";
+      dlJsonBtn.disabled   = true;
+      dlFramesBtn.disabled = true;
       resultsPanel.classList.remove("open");
     }
 
@@ -972,6 +1153,7 @@
     function addBoxes(interactions, frameUrls, depthUrls, groups, frameAnnots) {
       clearBoxes();
       currentJobId         = interactions._jobId;
+      currentDetections    = interactions.filter(i => typeof i === "object" && i.label);
       currentRgbUrls       = frameUrls;
       currentDepthUrls     = depthUrls;
       cameraGroupsData     = groups;
@@ -1015,8 +1197,14 @@
         const { x: rx, y: ry, z: rz, w: rw } = item.rotation;
         const quat = new THREE.Quaternion(rx, -ry, -rz, rw);
 
-        const edgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(sx, sy, sz));
-        const lines = new THREE.LineSegments(edgeGeo, new THREE.LineBasicMaterial({ color: col }));
+        const edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(sx, sy, sz));
+        const lineGeo  = new LineSegmentsGeometry();
+        lineGeo.setPositions(edgesGeo.attributes.position.array);
+        const lineMat = new LineMaterial({
+          color: col, linewidth: currentLineWidth,
+          resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
+        });
+        const lines = new LineSegments2(lineGeo, lineMat);
         lines.position.set(px, py, pz);
         lines.quaternion.copy(quat);
         boxGroup.add(lines);
@@ -1043,7 +1231,7 @@
 
         // Register meshes for toggling
         const objIdx = objectMeshes.length;
-        objectMeshes.push({ meshes: [lines, fill, label2d], visible: true, dot: null });
+        objectMeshes.push({ meshes: [lines, fill, label2d], lineMat, visible: true, dot: null });
 
         const row = document.createElement("div");
         row.className = "result-item";
@@ -1054,11 +1242,21 @@
             <div class="result-label">${item.label}</div>
             <div class="result-pos">${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)}</div>
             ${frameCount ? `<button class="result-frames-btn">${frameCount} frames ›</button>` : ""}
-          </div>`;
+          </div>
+          <button class="result-eye-btn" title="Focus camera on this object">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>`;
 
         const dot = row.querySelector(".result-dot");
         objectMeshes[objIdx].dot = dot;
         dot.addEventListener("click", (e) => { e.stopPropagation(); toggleObject(objIdx); });
+
+        row.querySelector(".result-eye-btn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          flyToObject(px, py, pz, sx, sy, sz);
+        });
 
         if (frameCount) {
           row.querySelector(".result-frames-btn").addEventListener("click", (e) => {
@@ -1073,6 +1271,8 @@
       resultsPanel.classList.add("open");
       setStatus(`Found ${interactions.length} object${interactions.length !== 1 ? "s" : ""}` +
                 ` — ${groups.length} camera positions used`);
+      dlJsonBtn.disabled   = false;
+      dlFramesBtn.disabled = false;
     }
 
     // ─── Analyse ─────────────────────────────────────────────────────────────

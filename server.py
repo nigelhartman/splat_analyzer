@@ -6,11 +6,13 @@ import time
 import shutil
 import logging
 import asyncio
+import zipfile
+from io import BytesIO
 from collections import defaultdict
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.INFO)
@@ -162,6 +164,31 @@ async def get_frame(job_id: str, filename: str):
     if not frame_path.exists():
         raise HTTPException(status_code=404, detail="Frame not found")
     return FileResponse(frame_path, media_type="image/png")
+
+
+@app.get("/jobs/{job_id}/download")
+async def download_job(job_id: str):
+    """ZIP of all RGB frames, depth PNGs, and interactions.json for a job."""
+    job_dir = WORK_DIR / job_id
+    if not job_dir.exists():
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        frames_dir = job_dir / "frames"
+        if frames_dir.exists():
+            for f in sorted(frames_dir.glob("*.png")):
+                zf.write(f, f"frames/{f.name}")
+        for name in ("interactions.json", "transforms.json"):
+            p = job_dir / name
+            if p.exists():
+                zf.write(p, name)
+    buf.seek(0)
+    return Response(
+        content=buf.read(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=splat_{job_id[:8]}.zip"},
+    )
 
 
 @app.get("/health")
