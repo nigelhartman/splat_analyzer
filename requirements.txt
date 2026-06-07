@@ -5,7 +5,7 @@ torch
 torchvision
 gsplat
 transformers>=4.37,<4.51
-numpy
+numpy<2
 imageio
 plyfile
 opencv-python-headless

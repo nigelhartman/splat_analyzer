@@ -147,6 +147,10 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD}"
 sudo docker stop ${CONTAINER} 2>/dev/null && echo "  Stopped old container" || true
 sudo docker rm   ${CONTAINER} 2>/dev/null && echo "  Removed old container" || true
 
+# Kill any leftover process on port 8000 (e.g. uvicorn from a pre-Docker deploy)
+sudo fuser -k 8000/tcp 2>/dev/null && echo "  Killed stale process on :8000" || true
+tmux kill-session -t worldmodel 2>/dev/null || true
+
 # Use --gpus all only when the GPU toolkit is available
 GPU_FLAG=""
 if command -v nvidia-smi &>/dev/null && sudo docker info 2>/dev/null | grep -q "Runtimes.*nvidia"; then
