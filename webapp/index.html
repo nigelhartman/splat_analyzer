@@ -3,231 +3,255 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WorldModelData</title>
+  <title>Splat Analyzer</title>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #f6f8fa;
+      --surface: #ffffff;
+      --border: #d0d7de;
+      --border-subtle: #eaeef2;
+      --text: #1f2328;
+      --text-secondary: #57606a;
+      --text-muted: #8c959f;
+      --accent: #0969da;
+      --accent-bg: #ddf4ff;
+      --success: #1a7f37;
+      --success-bg: #dafbe1;
+      --danger: #cf222e;
+      --danger-bg: #ffebe9;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
+    }
+
     body {
-      background: #0d1117; color: #e6edf3;
+      background: var(--bg); color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px; line-height: 1.5;
       min-height: 100vh; display: flex; flex-direction: column;
     }
 
     /* ── Header ── */
     header {
-      display: flex; align-items: center; gap: 12px;
-      padding: 0 24px; height: 54px; flex-shrink: 0;
-      background: rgba(13,17,23,0.95);
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-      backdrop-filter: blur(12px);
-      position: sticky; top: 0; z-index: 50;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      height: 56px; display: flex; align-items: center; gap: 16px;
+      padding: 0 24px; position: sticky; top: 0; z-index: 50;
     }
     .logo {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 15px; font-weight: 700; color: #58a6ff; letter-spacing: -0.3px;
-      text-decoration: none;
+      display: flex; align-items: center; gap: 8px; text-decoration: none;
+      font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -0.3px;
     }
-    .logo svg { flex-shrink: 0; }
-    header nav { display: flex; gap: 2px; margin-left: auto; }
+    .logo-icon { color: var(--accent); flex-shrink: 0; }
+    header nav { display: flex; gap: 4px; margin-left: auto; }
     header nav a {
-      padding: 5px 11px; border-radius: 6px; font-size: 13px;
-      color: #8b949e; text-decoration: none;
-      transition: background 0.15s, color 0.15s;
+      padding: 5px 10px; border-radius: var(--radius); font-size: 13px;
+      color: var(--text-secondary); text-decoration: none;
+      transition: background 0.12s, color 0.12s;
     }
-    header nav a:hover { background: rgba(255,255,255,0.06); color: #e6edf3; }
-    .header-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.08); }
+    header nav a:hover { background: var(--bg); color: var(--text); }
+    .header-sep { width: 1px; height: 20px; background: var(--border); }
     #settings-btn {
       display: flex; align-items: center; gap: 6px;
-      padding: 5px 10px; border-radius: 6px; font-size: 12px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
-      color: #8b949e; cursor: pointer;
-      transition: background 0.15s, color 0.15s;
+      padding: 5px 10px; border-radius: var(--radius); font-size: 13px;
+      background: transparent; border: 1px solid var(--border);
+      color: var(--text-secondary); cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
     }
-    #settings-btn:hover, #settings-btn.open { background: rgba(255,255,255,0.1); color: #e6edf3; }
+    #settings-btn:hover { background: var(--bg); border-color: var(--text-muted); color: var(--text); }
 
     /* ── Settings flyout ── */
     #settings-flyout {
-      display: none; position: fixed;
-      top: 54px; right: 12px; z-index: 200;
-      width: 280px; padding: 16px;
-      background: rgba(13,17,23,0.98);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 10px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-      backdrop-filter: blur(16px);
+      display: none; position: fixed; top: 56px; right: 16px; z-index: 200;
+      width: 288px; padding: 16px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
     }
     #settings-flyout.open { display: block; }
-    .fly-label {
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
-      color: #6e7681; margin-bottom: 7px;
-    }
+    .fly-label { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
     .fly-input {
-      width: 100%; padding: 7px 10px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 6px; color: #e6edf3; font-size: 12px;
+      width: 100%; padding: 7px 10px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      color: var(--text); font-size: 12px;
       font-family: "SF Mono", "Fira Code", monospace;
-      outline: none; transition: border-color 0.15s;
+      outline: none; transition: border-color 0.12s;
     }
-    .fly-input:focus { border-color: #388bfd; }
-    .fly-hint { font-size: 10px; color: #6e7681; margin-top: 5px; }
-    .fly-hint.ok  { color: #3fb950; }
-    .fly-hint.err { color: #f85149; }
+    .fly-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(9,105,218,0.1); }
+    .fly-hint { font-size: 11px; color: var(--text-muted); margin-top: 5px; }
+    .fly-hint.ok  { color: var(--success); }
+    .fly-hint.err { color: var(--danger); }
 
     /* ── Main ── */
     main {
       flex: 1; display: flex; flex-direction: column;
-      align-items: center; padding: 40px 20px 60px;
-      gap: 24px;
+      align-items: center; padding: 40px 20px 60px; gap: 20px;
     }
+
+    /* ── Card ── */
     .card {
-      width: 100%; max-width: 580px;
-      background: rgba(22,27,34,0.8);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 12px; overflow: hidden;
+      width: 100%; max-width: 560px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
     }
     .card-body { padding: 24px; }
 
     /* ── Upload zone ── */
     .upload-zone {
-      border: 2px dashed rgba(255,255,255,0.1);
-      border-radius: 8px; padding: 32px 20px;
-      text-align: center; cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
-      position: relative;
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      padding: 28px 20px; text-align: center; cursor: pointer;
+      transition: border-color 0.12s, background 0.12s; position: relative;
+      background: var(--bg);
     }
-    .upload-zone:hover, .upload-zone.drag { border-color: #388bfd; background: rgba(56,139,253,0.04); }
+    .upload-zone:hover, .upload-zone.drag {
+      border-color: var(--accent); background: var(--accent-bg);
+    }
     .upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-    .upload-icon { color: #4a5568; margin-bottom: 10px; }
-    .upload-title { font-size: 14px; color: #8b949e; }
-    .upload-title span { color: #58a6ff; }
-    .upload-sub { font-size: 11px; color: #4a5568; margin-top: 4px; }
+    .upload-icon { color: var(--text-muted); margin-bottom: 10px; }
+    .upload-title { font-size: 14px; color: var(--text-secondary); }
+    .upload-title span { color: var(--accent); font-weight: 500; }
+    .upload-sub { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
     .file-selected {
-      display: none; align-items: center; gap: 10px;
-      padding: 10px 14px; margin-top: 10px;
-      background: rgba(56,139,253,0.08);
-      border: 1px solid rgba(56,139,253,0.2);
-      border-radius: 6px;
+      display: none; align-items: center; gap: 10px; padding: 10px 12px;
+      margin-top: 10px; background: var(--accent-bg);
+      border: 1px solid rgba(9,105,218,0.2); border-radius: var(--radius);
     }
     .file-selected.show { display: flex; }
-    .file-selected svg { color: #58a6ff; flex-shrink: 0; }
-    .file-name-text { font-size: 13px; color: #e6edf3; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .file-size { font-size: 11px; color: #8b949e; flex-shrink: 0; }
+    .file-selected svg { color: var(--accent); flex-shrink: 0; }
+    .file-name-text { font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-size { font-size: 12px; color: var(--text-secondary); flex-shrink: 0; }
 
     /* ── Form fields ── */
     .field { margin-top: 16px; }
-    .field label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 6px; }
+    .field label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; }
     .field input[type=text] {
-      width: 100%; padding: 8px 11px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 6px; color: #e6edf3; font-size: 13px;
-      outline: none; transition: border-color 0.15s, background 0.15s;
+      width: 100%; padding: 8px 11px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      color: var(--text); font-size: 13px; outline: none;
+      transition: border-color 0.12s, box-shadow 0.12s;
     }
-    .field input:focus { border-color: #388bfd; background: rgba(56,139,253,0.04); }
-    .field input::placeholder { color: #3d444d; }
+    .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(9,105,218,0.1); }
+    .field input::placeholder { color: var(--text-muted); }
 
-    /* ── Action button ── */
+    /* ── Run button ── */
     #run-btn {
-      margin-top: 18px; width: 100%; padding: 10px;
-      background: #238636; border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 7px; color: #fff; font-size: 14px; font-weight: 600;
-      cursor: pointer; transition: background 0.15s;
+      margin-top: 16px; width: 100%; padding: 9px;
+      background: var(--accent); border: none;
+      border-radius: var(--radius); color: #fff; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: background 0.12s;
     }
-    #run-btn:hover:not(:disabled) { background: #2ea043; }
-    #run-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-    #run-btn.loading { background: #1a3a26; }
+    #run-btn:hover:not(:disabled) { background: #0860ca; }
+    #run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #run-btn.loading { background: #388bfd; }
 
     /* ── Progress ── */
-    #progress-section { display: none; padding: 18px 24px; border-top: 1px solid rgba(255,255,255,0.06); }
+    #progress-section { display: none; padding: 14px 24px 12px; border-top: 1px solid var(--border-subtle); }
     #progress-section.show { display: block; }
-    .progress-bar { height: 3px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; margin-bottom: 10px; }
-    .progress-fill { height: 100%; background: linear-gradient(90deg,#388bfd,#58a6ff); border-radius: 2px; transition: width 0.4s ease; box-shadow: 0 0 8px #388bfd80; }
-    .progress-msg { font-size: 12px; color: #8b949e; display: flex; align-items: center; gap: 8px; }
-    .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.08); border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.75s linear infinite; flex-shrink: 0; }
+    .progress-bar { height: 3px; background: var(--bg); border-radius: 2px; overflow: hidden; margin-bottom: 10px; }
+    .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.4s ease; }
+    .progress-msg { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
+    .spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.75s linear infinite; flex-shrink: 0; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Job ID bar ── */
+    #job-id-section {
+      display: none; padding: 10px 16px;
+      border-top: 1px solid var(--border-subtle);
+      background: var(--bg);
+    }
+    #job-id-section.show { display: block; }
+    .job-id-row { display: flex; align-items: center; gap: 8px; }
+    .jid-label { font-size: 11px; font-weight: 600; color: var(--text-secondary); flex-shrink: 0; }
+    #job-id-text {
+      flex: 1; font-size: 11px; color: var(--text-muted);
+      font-family: "SF Mono","Fira Code",monospace;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #copy-job-id-btn {
+      padding: 3px 8px; font-size: 11px; border-radius: 5px;
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--text-secondary); cursor: pointer; flex-shrink: 0;
+      transition: background 0.12s, color 0.12s;
+    }
+    #copy-job-id-btn:hover { background: var(--bg); color: var(--text); }
 
     /* ── Error ── */
     #error-box {
-      display: none; padding: 12px 14px; margin: 0 24px 16px;
-      background: rgba(248,81,73,0.1);
-      border: 1px solid rgba(248,81,73,0.3);
-      border-radius: 6px; font-size: 12px; color: #f85149;
+      display: none; padding: 10px 14px; margin: 0 16px 12px;
+      background: var(--danger-bg); border: 1px solid rgba(207,34,46,0.3);
+      border-radius: var(--radius); font-size: 12px; color: var(--danger);
     }
     #error-box.show { display: block; }
 
-    /* ── Results ── */
+    /* ── Results card ── */
     #results-card {
-      display: none; width: 100%; max-width: 580px;
-      background: rgba(22,27,34,0.8);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 12px; overflow: hidden;
+      display: none; width: 100%; max-width: 560px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
     }
     #results-card.show { display: block; }
     .results-header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding: 14px 20px; border-bottom: 1px solid var(--border-subtle);
     }
-    .results-title { font-size: 13px; font-weight: 600; color: #e6edf3; display: flex; align-items: center; gap: 8px; }
+    .results-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
     .results-badge {
-      background: rgba(255,255,255,0.08); padding: 2px 8px;
-      border-radius: 10px; font-size: 11px; font-weight: 400; color: #8b949e;
+      background: var(--bg); border: 1px solid var(--border);
+      padding: 2px 8px; border-radius: 20px; font-size: 11px;
+      font-weight: 400; color: var(--text-secondary);
     }
     .results-actions { display: flex; gap: 8px; }
     .action-btn {
-      display: flex; align-items: center; gap: 6px;
-      padding: 5px 11px; border-radius: 6px; font-size: 12px;
-      border: 1px solid rgba(255,255,255,0.1);
-      background: rgba(255,255,255,0.05); color: #e6edf3;
+      display: flex; align-items: center; gap: 5px;
+      padding: 5px 11px; border-radius: var(--radius); font-size: 12px; font-weight: 500;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text);
       cursor: pointer; text-decoration: none;
-      transition: background 0.15s, border-color 0.15s;
+      transition: background 0.12s, border-color 0.12s;
     }
-    .action-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
-    .action-btn.primary { background: rgba(56,139,253,0.1); border-color: rgba(56,139,253,0.3); color: #58a6ff; }
-    .action-btn.primary:hover { background: rgba(56,139,253,0.18); }
+    .action-btn:hover { background: var(--bg); border-color: var(--text-muted); }
+    .action-btn.primary {
+      background: var(--accent); border-color: var(--accent); color: #fff;
+    }
+    .action-btn.primary:hover { background: #0860ca; border-color: #0860ca; }
 
     /* ── Objects list ── */
-    #objects-list { padding: 6px 0; }
+    #objects-list { padding: 4px 0; }
     .obj-row {
       display: flex; align-items: center; gap: 12px;
-      padding: 10px 20px; border-bottom: 1px solid rgba(255,255,255,0.04);
+      padding: 10px 20px; border-bottom: 1px solid var(--border-subtle);
     }
     .obj-row:last-child { border-bottom: none; }
     .obj-dot {
       width: 10px; height: 10px; border-radius: 50%;
-      flex-shrink: 0; box-shadow: 0 0 7px currentColor;
+      flex-shrink: 0; opacity: 0.85;
     }
     .obj-info { flex: 1; min-width: 0; }
     .obj-label { font-size: 13px; font-weight: 500; text-transform: capitalize; }
-    .obj-pos {
-      font-size: 10px; color: #6e7681; margin-top: 2px;
-      font-family: "SF Mono","Fira Code",monospace;
-    }
-    .obj-size { font-size: 11px; color: #8b949e; text-align: right; flex-shrink: 0; font-family: "SF Mono","Fira Code",monospace; }
+    .obj-pos { font-size: 11px; color: var(--text-muted); margin-top: 1px; font-family: "SF Mono","Fira Code",monospace; }
+    .obj-size { font-size: 11px; color: var(--text-secondary); text-align: right; flex-shrink: 0; font-family: "SF Mono","Fira Code",monospace; }
 
     /* ── Footer ── */
     footer {
       text-align: center; padding: 24px;
-      font-size: 11px; color: #3d444d;
+      font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border-subtle);
     }
-    footer a { color: #4a5568; text-decoration: none; }
-    footer a:hover { color: #8b949e; }
+    footer a { color: var(--text-secondary); text-decoration: none; }
+    footer a:hover { color: var(--text); }
   </style>
 </head>
 <body>
 
 <header>
   <a href="/" class="logo">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg class="logo-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
       <line x1="12" y1="22" x2="12" y2="15.5"/>
       <polyline points="22 8.5 12 15.5 2 8.5"/>
     </svg>
-    WorldModelData
+    Splat Analyzer
   </a>
   <nav>
-    <a href="/debug">3D Debug View</a>
-    <a href="/docs">API Docs</a>
+    <a href="/debug">3D Viewer</a>
+    <a href="/docs">API</a>
     <a href="/admin">Admin</a>
   </nav>
   <div class="header-sep"></div>
@@ -240,7 +264,6 @@
   </button>
 </header>
 
-<!-- Settings flyout -->
 <div id="settings-flyout">
   <div class="fly-label">API Key</div>
   <input class="fly-input" type="password" id="api-key-input"
@@ -252,17 +275,16 @@
   <div class="card">
     <div class="card-body">
 
-      <!-- Upload zone -->
       <div class="upload-zone" id="upload-zone">
         <input type="file" id="file-input" accept=".ply,.splat">
         <div class="upload-icon">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="16 16 12 12 8 16"/>
             <line x1="12" y1="12" x2="12" y2="21"/>
             <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
           </svg>
         </div>
-        <div class="upload-title">Drop <strong>.ply</strong> file here or <span>browse</span></div>
+        <div class="upload-title">Drop <strong>.ply</strong> file or <span>browse</span></div>
         <div class="upload-sub">Gaussian Splat file</div>
       </div>
 
@@ -281,7 +303,7 @@
                value="television, sofa, armchair, chair">
       </div>
 
-      <button id="run-btn" disabled>Run Detection →</button>
+      <button id="run-btn" disabled>Run Detection</button>
     </div>
 
     <div id="progress-section">
@@ -289,10 +311,17 @@
       <div class="progress-msg"><div class="spinner"></div><span id="progress-msg">Uploading…</span></div>
     </div>
 
+    <div id="job-id-section">
+      <div class="job-id-row">
+        <span class="jid-label">Job ID</span>
+        <code id="job-id-text"></code>
+        <button id="copy-job-id-btn">Copy</button>
+      </div>
+    </div>
+
     <div id="error-box"></div>
   </div>
 
-  <!-- Results card -->
   <div id="results-card">
     <div class="results-header">
       <div class="results-title">
@@ -302,11 +331,11 @@
       <div class="results-actions">
         <button class="action-btn" id="dl-json-btn">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          JSON
+          Download JSON
         </button>
         <a class="action-btn primary" id="debug-link" href="/debug">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/></svg>
-          3D Viewer
+          View in 3D
         </a>
       </div>
     </div>
@@ -315,27 +344,27 @@
 </main>
 
 <footer>
-  WorldModelData &nbsp;·&nbsp;
+  Splat Analyzer &nbsp;·&nbsp;
   <a href="/docs">API Reference</a> &nbsp;·&nbsp;
-  <a href="/debug">3D Debug View</a> &nbsp;·&nbsp;
-  <a href="/admin">Admin Panel</a>
+  <a href="/debug">3D Viewer</a> &nbsp;·&nbsp;
+  <a href="/admin">Admin</a>
 </footer>
 
 <script>
   const COLOURS = {
-    television:"#00e5ff",tv:"#00e5ff",monitor:"#00e5ff",screen:"#00e5ff",
-    sofa:"#00ff88",couch:"#00ff88",
-    armchair:"#ffaa00",chair:"#ffaa00",
-    desk:"#ff69b4",table:"#ff69b4",
-    "air conditioner":"#4488ff",
-    bed:"#c084fc",cabinet:"#e879f9",wardrobe:"#e879f9",
-    lamp:"#fde047",light:"#fde047",
-    refrigerator:"#67e8f9",fridge:"#67e8f9",
+    television:"#0969da",tv:"#0969da",monitor:"#0969da",screen:"#0969da",
+    sofa:"#1a7f37",couch:"#1a7f37",
+    armchair:"#9a3f00",chair:"#9a3f00",
+    desk:"#8250df",table:"#8250df",
+    "air conditioner":"#0550ae",
+    bed:"#bf3989",cabinet:"#bf3989",wardrobe:"#bf3989",
+    lamp:"#9a6700",light:"#9a6700",
+    refrigerator:"#0e7490",fridge:"#0e7490",
   };
   function labelColour(label) {
     const l = label.toLowerCase();
     for (const [k,v] of Object.entries(COLOURS)) if (l.includes(k)) return v;
-    return "#8b949e";
+    return "#57606a";
   }
 
   // ── API key ──────────────────────────────────────────────────────────────
@@ -368,165 +397,135 @@
   settingsBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     settingsFly.classList.toggle("open");
-    settingsBtn.classList.toggle("open", settingsFly.classList.contains("open"));
   });
   document.addEventListener("click", (e) => {
-    if (!settingsFly.contains(e.target) && e.target !== settingsBtn) {
+    if (!settingsFly.contains(e.target) && e.target !== settingsBtn)
       settingsFly.classList.remove("open");
-      settingsBtn.classList.remove("open");
-    }
   });
 
   // ── File handling ────────────────────────────────────────────────────────
-  const fileInput     = document.getElementById("file-input");
-  const uploadZone    = document.getElementById("upload-zone");
-  const fileSelected  = document.getElementById("file-selected");
-  const fileNameText  = document.getElementById("file-name-text");
-  const fileSizeText  = document.getElementById("file-size-text");
-  const runBtn        = document.getElementById("run-btn");
-  let selectedFile    = null;
+  const fileInput    = document.getElementById("file-input");
+  const uploadZone   = document.getElementById("upload-zone");
+  const fileSelected = document.getElementById("file-selected");
+  const runBtn       = document.getElementById("run-btn");
+  let selectedFile   = null;
 
   function setFile(file) {
     if (!file) return;
     selectedFile = file;
-    fileNameText.textContent = file.name;
-    fileSizeText.textContent = (file.size / 1048576).toFixed(1) + " MB";
+    document.getElementById("file-name-text").textContent = file.name;
+    document.getElementById("file-size-text").textContent = (file.size / 1048576).toFixed(1) + " MB";
     fileSelected.classList.add("show");
     runBtn.disabled = false;
   }
 
   fileInput.addEventListener("change", (e) => setFile(e.target.files[0]));
-
   uploadZone.addEventListener("dragover",  (e) => { e.preventDefault(); uploadZone.classList.add("drag"); });
   uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("drag"));
   uploadZone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    uploadZone.classList.remove("drag");
-    const f = e.dataTransfer?.files[0];
-    if (f) setFile(f);
+    e.preventDefault(); uploadZone.classList.remove("drag");
+    const f = e.dataTransfer?.files[0]; if (f) setFile(f);
   });
 
   // ── Detection flow ───────────────────────────────────────────────────────
   const progressSection = document.getElementById("progress-section");
   const progressFill    = document.getElementById("progress-fill");
   const progressMsg     = document.getElementById("progress-msg");
+  const jobIdSection    = document.getElementById("job-id-section");
+  const jobIdText       = document.getElementById("job-id-text");
   const errorBox        = document.getElementById("error-box");
   const resultsCard     = document.getElementById("results-card");
   const objectsList     = document.getElementById("objects-list");
   const objCount        = document.getElementById("obj-count");
-  const dlJsonBtn       = document.getElementById("dl-json-btn");
   const debugLink       = document.getElementById("debug-link");
-  let lastJobId         = null;
-  let lastObjects       = [];
+  let lastJobId = null, lastObjects = [];
 
   function showProgress(msg, pct) {
     progressSection.classList.add("show");
     progressMsg.textContent = msg;
     progressFill.style.width = pct + "%";
   }
-  function hideProgress() {
-    progressSection.classList.remove("show");
-    progressFill.style.width = "0%";
-  }
-  function showError(msg) {
-    errorBox.textContent = msg;
-    errorBox.classList.add("show");
-  }
-  function hideError() { errorBox.classList.remove("show"); }
-
+  function hideProgress() { progressSection.classList.remove("show"); progressFill.style.width = "0%"; }
+  function showError(msg) { errorBox.textContent = msg; errorBox.classList.add("show"); }
+  function hideError()    { errorBox.classList.remove("show"); }
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   let pctTicker = null;
-  function startProgressTicker(from) {
+  function startTicker(from) {
     let pct = from;
-    pctTicker = setInterval(() => {
-      pct = Math.min(pct + (88 - pct) * 0.025, 88);
-      progressFill.style.width = pct + "%";
-    }, 1200);
+    pctTicker = setInterval(() => { pct = Math.min(pct + (88 - pct) * 0.025, 88); progressFill.style.width = pct + "%"; }, 1200);
   }
   function stopTicker() { clearInterval(pctTicker); pctTicker = null; }
+
+  document.getElementById("copy-job-id-btn").addEventListener("click", () => {
+    if (!lastJobId) return;
+    navigator.clipboard.writeText(lastJobId).then(() => {
+      const btn = document.getElementById("copy-job-id-btn");
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+    });
+  });
 
   runBtn.addEventListener("click", async () => {
     const key = getApiKey();
     if (!key) {
       settingsFly.classList.add("open");
-      settingsBtn.classList.add("open");
       showError("Enter your API key in Settings first.");
       return;
     }
     if (!selectedFile) return;
 
-    runBtn.disabled = true;
-    runBtn.classList.add("loading");
-    runBtn.textContent = "Running…";
-    hideError();
-    resultsCard.classList.remove("show");
+    runBtn.disabled = true; runBtn.classList.add("loading"); runBtn.textContent = "Running…";
+    hideError(); resultsCard.classList.remove("show");
 
     try {
-      // 1. Submit
       showProgress("Uploading file…", 5);
       const form = new FormData();
       form.append("file",   selectedFile);
       form.append("prompt", document.getElementById("prompt-input").value);
-      const submitRes = await fetch("/api/v1/detect", {
-        method: "POST",
-        headers: { "X-API-Key": key },
-        body: form,
-      });
-      if (!submitRes.ok) throw new Error("Submit failed: " + (await submitRes.text()).slice(0,200));
-      const { job_id } = await submitRes.json();
+      const res = await fetch("/api/v1/detect", { method: "POST", headers: { "X-API-Key": key }, body: form });
+      if (!res.ok) throw new Error("Submit failed: " + (await res.text()).slice(0,200));
+      const { job_id } = await res.json();
       lastJobId = job_id;
 
-      // 2. Poll
-      showProgress("Job queued — rendering camera views…", 12);
-      startProgressTicker(12);
+      jobIdText.textContent = job_id;
+      jobIdSection.classList.add("show");
 
-      let phase = "pending";
+      showProgress("Job queued — rendering camera views…", 12);
+      startTicker(12);
+
       while (true) {
         await sleep(3500);
         const sr = await fetch(`/api/v1/jobs/${job_id}/status`, { headers: { "X-API-Key": key } });
         if (!sr.ok) throw new Error("Status check failed");
         const { status } = await sr.json();
-        phase = status;
         if (status === "done") break;
-        if (status === "failed") throw new Error("Detection pipeline failed on server.");
-        progressMsg.textContent = status === "running"
-          ? "Rendering + detecting objects (~2-3 min)…"
-          : "Starting pipeline…";
+        if (status === "failed") throw new Error("Detection pipeline failed. Check the debug view for details.");
+        progressMsg.textContent = status === "running" ? "Rendering + detecting (~2–3 min)…" : "Starting pipeline…";
       }
 
-      stopTicker();
-      showProgress("Loading results…", 96);
-
-      // 3. Fetch result
+      stopTicker(); showProgress("Loading results…", 96);
       const rr = await fetch(`/api/v1/jobs/${job_id}/result`, { headers: { "X-API-Key": key } });
       if (!rr.ok) throw new Error("Failed to fetch result");
       const data = await rr.json();
       lastObjects = data.objects || [];
-
       progressFill.style.width = "100%";
       await sleep(300);
       hideProgress();
       showResults(lastObjects, job_id, key);
 
     } catch (err) {
-      stopTicker();
-      hideProgress();
-      showError(err.message);
-      console.error(err);
+      stopTicker(); hideProgress(); showError(err.message); console.error(err);
     } finally {
-      runBtn.disabled = false;
-      runBtn.classList.remove("loading");
-      runBtn.textContent = "Run Detection →";
+      runBtn.disabled = false; runBtn.classList.remove("loading"); runBtn.textContent = "Run Detection";
     }
   });
 
   function showResults(objects, jobId, key) {
     objectsList.innerHTML = "";
     objCount.textContent = String(objects.length);
-
     if (!objects.length) {
-      objectsList.innerHTML = '<div style="padding:20px;text-align:center;color:#6e7681;font-size:13px;">No objects found — try adjusting your class labels.</div>';
+      objectsList.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px;">No objects found — try adjusting your class labels.</div>';
     } else {
       objects.forEach((obj) => {
         const col = labelColour(obj.label);
@@ -535,7 +534,7 @@
         const div = document.createElement("div");
         div.className = "obj-row";
         div.innerHTML = `
-          <div class="obj-dot" style="background:${col};color:${col}"></div>
+          <div class="obj-dot" style="background:${col};box-shadow:0 0 0 3px ${col}22"></div>
           <div class="obj-info">
             <div class="obj-label" style="color:${col}">${obj.label}</div>
             <div class="obj-pos">x:${x.toFixed(2)} y:${y.toFixed(2)} z:${z.toFixed(2)}</div>
@@ -544,18 +543,14 @@
         objectsList.appendChild(div);
       });
     }
-
     debugLink.href = `/debug#job=${jobId}&key=${encodeURIComponent(key)}`;
     resultsCard.classList.add("show");
   }
 
-  dlJsonBtn.addEventListener("click", () => {
-    if (!lastObjects.length && !lastJobId) return;
-    const payload = { job_id: lastJobId, objects: lastObjects };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const a = Object.assign(document.createElement("a"), {
-      href: URL.createObjectURL(blob), download: "detections.json",
-    });
+  document.getElementById("dl-json-btn").addEventListener("click", () => {
+    if (!lastJobId) return;
+    const blob = new Blob([JSON.stringify({ job_id: lastJobId, objects: lastObjects }, null, 2)], { type: "application/json" });
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "detections.json" });
     a.click(); URL.revokeObjectURL(a.href);
   });
 </script>

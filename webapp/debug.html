@@ -3,227 +3,333 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Splat Analyzer — Debug</title>
+  <title>Splat Analyzer — 3D Viewer</title>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      background: #0d1117;
-      color: #e6edf3;
+      background: #111318; color: #1f2328;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      overflow: hidden;
-      height: 100vh;
-      width: 100vw;
+      overflow: hidden; height: 100vh; width: 100vw;
     }
 
     #viewport { position: fixed; inset: 0; cursor: crosshair; }
     #viewport canvas { display: block; }
     #viewport.dragging { cursor: grabbing; }
 
+    /* ─── Topbar ──────────────────────────────────────────────────────────── */
     #topbar {
       position: fixed; top: 0; left: 0; right: 0; z-index: 100;
       height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 14px;
-      background: rgba(13,17,23,0.88); backdrop-filter: blur(14px);
-      border-bottom: 1px solid rgba(255,255,255,0.07);
+      background: rgba(255,255,255,0.97); backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(0,0,0,0.1);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
     }
+
     .logo {
-      font-size: 15px; font-weight: 700; color: #58a6ff; letter-spacing: -0.4px;
-      white-space: nowrap; display: flex; align-items: center; gap: 7px;
+      font-size: 15px; font-weight: 700; color: #1f2328; letter-spacing: -0.4px;
+      white-space: nowrap; display: flex; align-items: center; gap: 7px; flex-shrink: 0;
     }
-    .logo a { color: inherit; text-decoration: none; font-size: 11px; opacity: 0.6; margin-left: 4px; }
-    .logo a:hover { opacity: 1; }
-    .sep { width: 1px; height: 22px; background: rgba(255,255,255,0.1); flex-shrink: 0; }
+    .logo svg { color: #0969da; }
+    .logo-home {
+      font-size: 11px; font-weight: 500; color: #57606a; text-decoration: none;
+      margin-left: 4px; opacity: 0.7;
+    }
+    .logo-home:hover { opacity: 1; color: #0969da; }
 
+    .sep { width: 1px; height: 22px; background: #d0d7de; flex-shrink: 0; }
+
+    /* Open splat button */
     #file-label {
-      display: flex; align-items: center; gap: 7px; padding: 5px 13px;
-      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap;
-      transition: background 0.15s, border-color 0.15s; user-select: none;
+      display: flex; align-items: center; gap: 6px; padding: 5px 11px;
+      background: #f6f8fa; border: 1px solid #d0d7de;
+      border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer;
+      color: #1f2328; white-space: nowrap; flex-shrink: 0;
+      transition: background 0.12s, border-color 0.12s;
     }
-    #file-label:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+    #file-label:hover { background: #eaeef2; border-color: #8c959f; }
+    #filename { font-size: 12px; color: #57606a; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
 
-    #filename { font-size: 12px; color: #8b949e; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+    /* ── Load controls ── */
+    #load-controls { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 
-    #prompt {
-      flex: 1; min-width: 0; padding: 6px 11px;
-      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 6px; color: #e6edf3; font-size: 13px; outline: none;
-      transition: border-color 0.15s, background 0.15s;
+    .mode-tabs {
+      display: flex; border: 1px solid #d0d7de; border-radius: 6px;
+      overflow: hidden; flex-shrink: 0;
     }
-    #prompt:focus { border-color: #388bfd; background: rgba(56,139,253,0.06); }
-    #prompt::placeholder { color: #3d444d; }
-
-    #analyze-btn {
-      padding: 6px 18px; background: #238636; border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 6px; color: #fff; font-size: 13px; font-weight: 600;
-      cursor: pointer; white-space: nowrap; transition: background 0.15s; flex-shrink: 0;
+    .mtab {
+      padding: 5px 11px; font-size: 12px; font-weight: 500; cursor: pointer;
+      background: transparent; border: none; color: #57606a;
+      transition: background 0.12s, color 0.12s;
     }
-    #analyze-btn:hover:not(:disabled) { background: #2ea043; }
-    #analyze-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-    #analyze-btn.loading { background: #1a3a26; }
+    .mtab:first-child { border-right: 1px solid #d0d7de; }
+    .mtab.active { background: #0969da; color: #fff; }
+    .mtab:not(.active):hover { background: #f6f8fa; color: #1f2328; }
 
+    .lpanel { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; }
+
+    .topbar-input {
+      flex: 1; min-width: 80px; padding: 5px 9px;
+      background: #f6f8fa; border: 1px solid #d0d7de;
+      border-radius: 6px; color: #1f2328; font-size: 12px;
+      font-family: "SF Mono","Fira Code",monospace;
+      outline: none; transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .topbar-input:focus { border-color: #0969da; box-shadow: 0 0 0 3px rgba(9,105,218,0.1); }
+    .topbar-input::placeholder { color: #8c959f; }
+
+    .load-btn {
+      padding: 5px 14px; background: #0969da; border: none;
+      border-radius: 6px; color: #fff; font-size: 12px; font-weight: 600;
+      cursor: pointer; white-space: nowrap; flex-shrink: 0;
+      transition: background 0.12s;
+    }
+    .load-btn:hover:not(:disabled) { background: #0860ca; }
+    .load-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #json-file-btn {
+      display: flex; align-items: center; gap: 5px; padding: 5px 10px;
+      background: #f6f8fa; border: 1px solid #d0d7de;
+      border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer;
+      color: #1f2328; white-space: nowrap; flex-shrink: 0;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    #json-file-btn:hover { background: #eaeef2; border-color: #8c959f; }
+    #json-fname { font-size: 12px; color: #57606a; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+
+    /* Settings button */
+    #settings-btn {
+      display: flex; align-items: center; gap: 5px; padding: 5px 10px;
+      background: #f6f8fa; border: 1px solid #d0d7de;
+      border-radius: 6px; color: #57606a; font-size: 12px; font-weight: 500;
+      cursor: pointer; white-space: nowrap; flex-shrink: 0;
+      transition: background 0.12s, color 0.12s;
+    }
+    #settings-btn:hover, #settings-btn.open { background: #eaeef2; color: #1f2328; border-color: #8c959f; }
+
+    /* ─── Settings panel ────────────────────────────────────────────────── */
+    #settings-panel {
+      display: none; position: fixed; top: 52px; right: 0; width: 248px; z-index: 150;
+      background: #ffffff; border-left: 1px solid #d0d7de;
+      border-bottom: 1px solid #d0d7de; padding: 14px 16px;
+      box-shadow: -4px 4px 16px rgba(0,0,0,0.06);
+    }
+    #settings-panel.open { display: block; }
+    .settings-section { margin-bottom: 16px; }
+    .settings-section:last-child { margin-bottom: 0; }
+    .settings-label { font-size: 11px; font-weight: 600; color: #57606a; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+    .settings-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .settings-row label { font-size: 12px; color: #57606a; flex: 1; }
+    .settings-row input[type=range] { flex: 1; accent-color: #0969da; cursor: pointer; }
+    .settings-row span { font-size: 11px; color: #1f2328; width: 28px; text-align: right; }
+    .settings-key-input {
+      width: 100%; padding: 6px 8px; background: #f6f8fa;
+      border: 1px solid #d0d7de; border-radius: 6px; color: #1f2328;
+      font-size: 11px; outline: none; font-family: "SF Mono","Fira Code",monospace;
+      transition: border-color 0.12s;
+    }
+    .settings-key-input:focus { border-color: #0969da; }
+    .settings-key-status { font-size: 11px; color: #8c959f; margin-top: 4px; }
+    .dl-btn {
+      display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px 10px;
+      margin-bottom: 6px; background: #f6f8fa; border: 1px solid #d0d7de;
+      border-radius: 6px; color: #1f2328; font-size: 12px; cursor: pointer;
+      transition: background 0.12s; text-align: left;
+    }
+    .dl-btn:hover { background: #eaeef2; }
+    .dl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ─── Results panel ─────────────────────────────────────────────────── */
     #results {
       position: fixed; right: 0; top: 52px; bottom: 0; width: 268px; z-index: 100;
-      background: rgba(13,17,23,0.88); border-left: 1px solid rgba(255,255,255,0.07);
-      backdrop-filter: blur(14px); transform: translateX(100%);
-      transition: transform 0.28s cubic-bezier(0.16,1,0.3,1);
+      background: rgba(255,255,255,0.97); border-left: 1px solid rgba(0,0,0,0.08);
+      backdrop-filter: blur(16px);
+      box-shadow: -4px 0 16px rgba(0,0,0,0.06);
+      transform: translateX(100%); transition: transform 0.28s cubic-bezier(0.16,1,0.3,1);
       display: flex; flex-direction: column; overflow: hidden;
     }
     #results.open { transform: translateX(0); }
 
-    #results-tabs { display: flex; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+    #results-tabs { display: flex; border-bottom: 1px solid #eaeef2; flex-shrink: 0; }
     .results-tab {
-      flex: 1; padding: 10px 0; font-size: 11px; text-align: center;
-      text-transform: uppercase; letter-spacing: 0.08em; color: #8b949e;
-      cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
+      flex: 1; padding: 10px 0; font-size: 11px; text-align: center; font-weight: 500;
+      text-transform: uppercase; letter-spacing: 0.06em; color: #57606a;
+      cursor: pointer; border-bottom: 2px solid transparent;
+      transition: color 0.12s, border-color 0.12s;
     }
-    .results-tab.active { color: #58a6ff; border-bottom-color: #388bfd; }
+    .results-tab.active { color: #0969da; border-bottom-color: #0969da; }
 
     #results-header {
-      padding: 10px 16px 8px; font-size: 10px; text-transform: uppercase;
-      letter-spacing: 0.1em; color: #8b949e;
+      padding: 10px 16px 8px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.06em; color: #57606a;
       display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
     }
-    .results-badge { background: rgba(255,255,255,0.08); padding: 2px 7px; border-radius: 10px; font-size: 11px; text-transform: none; letter-spacing: 0; color: #e6edf3; }
+    .results-badge {
+      background: #f6f8fa; border: 1px solid #d0d7de;
+      padding: 2px 7px; border-radius: 10px; font-size: 11px;
+      text-transform: none; letter-spacing: 0; color: #1f2328; font-weight: 400;
+    }
 
     #tab-objects, #tab-frames, #tab-cameras { display: none; flex-direction: column; flex: 1; overflow: hidden; }
     #tab-objects.active, #tab-frames.active, #tab-cameras.active { display: flex; }
-    #results-list { overflow-y: auto; flex: 1; padding: 8px 0; }
+    #results-list { overflow-y: auto; flex: 1; padding: 6px 0; }
 
     #frames-controls { display: flex; gap: 6px; padding: 8px 12px 4px; flex-shrink: 0; }
     .frames-toggle {
-      flex: 1; padding: 4px 8px; background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.1); border-radius: 5px; color: #8b949e;
-      font-size: 11px; cursor: pointer; text-align: center; transition: background 0.15s, color 0.15s, border-color 0.15s;
+      flex: 1; padding: 4px 8px; background: #f6f8fa;
+      border: 1px solid #d0d7de; border-radius: 5px; color: #57606a;
+      font-size: 11px; cursor: pointer; text-align: center;
+      transition: background 0.12s, color 0.12s, border-color 0.12s;
     }
-    .frames-toggle.active { background: rgba(56,139,253,0.15); border-color: #388bfd; color: #58a6ff; }
+    .frames-toggle.active { background: #ddf4ff; border-color: #0969da; color: #0969da; font-weight: 600; }
 
     #frames-grid {
       overflow-y: auto; flex: 1; padding: 8px;
       display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; align-content: start;
     }
     .frame-thumb {
-      aspect-ratio: 1; object-fit: cover; border-radius: 4px; cursor: pointer;
-      border: 1px solid rgba(255,255,255,0.06); transition: border-color 0.15s, transform 0.1s;
+      aspect-ratio: 1; object-fit: cover; border-radius: 5px; cursor: pointer;
+      border: 1px solid #eaeef2; transition: border-color 0.12s, transform 0.1s;
     }
-    .frame-thumb:hover { border-color: #388bfd; transform: scale(1.03); }
+    .frame-thumb:hover { border-color: #0969da; transform: scale(1.03); }
 
     #cameras-list { overflow-y: auto; flex: 1; padding: 6px 0; }
-    .camera-item { padding: 10px 14px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.1s; }
-    .camera-item:hover { background: rgba(255,255,255,0.03); }
+    .camera-item { padding: 10px 14px; border-bottom: 1px solid #eaeef2; transition: background 0.1s; }
+    .camera-item:hover { background: #f6f8fa; }
     .camera-header { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
-    .camera-icon { width: 26px; height: 26px; border-radius: 5px; background: rgba(56,139,253,0.15); border: 1px solid rgba(56,139,253,0.3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-    .camera-name { font-size: 13px; font-weight: 600; color: #e6edf3; flex: 1; }
-    .camera-pos { font-size: 10px; color: #6e7681; font-family: "SF Mono","Fira Code",monospace; margin-bottom: 7px; padding-left: 34px; line-height: 1.6; }
+    .camera-icon { width: 26px; height: 26px; border-radius: 5px; background: #ddf4ff; border: 1px solid rgba(9,105,218,0.2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .camera-name { font-size: 13px; font-weight: 600; color: #1f2328; flex: 1; }
+    .camera-pos { font-size: 10px; color: #8c959f; font-family: "SF Mono","Fira Code",monospace; margin-bottom: 7px; padding-left: 34px; line-height: 1.6; }
     .camera-thumb-row { display: flex; gap: 6px; padding-left: 34px; align-items: flex-start; }
-    .camera-thumb { width: 62px; height: 62px; object-fit: cover; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); flex-shrink: 0; cursor: pointer; transition: border-color 0.15s; }
-    .camera-thumb:hover { border-color: #388bfd; }
+    .camera-thumb { width: 62px; height: 62px; object-fit: cover; border-radius: 4px; border: 1px solid #eaeef2; flex-shrink: 0; cursor: pointer; transition: border-color 0.12s; }
+    .camera-thumb:hover { border-color: #0969da; }
     .camera-btns { display: flex; flex-direction: column; gap: 4px; }
-    .cam-btn { padding: 4px 10px; font-size: 11px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: #e6edf3; cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s; }
-    .cam-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
-    .cam-btn.teleport { color: #58a6ff; border-color: rgba(56,139,253,0.3); }
-    .cam-btn.teleport:hover { background: rgba(56,139,253,0.12); border-color: #388bfd; }
-    .cam-btn.depth-btn { color: #fde047; border-color: rgba(253,224,71,0.25); }
-    .cam-btn.depth-btn:hover { background: rgba(253,224,71,0.08); border-color: rgba(253,224,71,0.5); }
+    .cam-btn { padding: 4px 10px; font-size: 11px; border-radius: 5px; border: 1px solid #d0d7de; background: #f6f8fa; color: #1f2328; cursor: pointer; white-space: nowrap; transition: background 0.12s; }
+    .cam-btn:hover { background: #eaeef2; }
+    .cam-btn.teleport { color: #0969da; border-color: rgba(9,105,218,0.3); }
+    .cam-btn.teleport:hover { background: #ddf4ff; }
+    .cam-btn.depth-btn { color: #9a6700; border-color: rgba(154,103,0,0.3); }
+    .cam-btn.depth-btn:hover { background: #fff8c5; }
 
     .result-item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; transition: background 0.1s; cursor: default; }
-    .result-item:hover { background: rgba(255,255,255,0.04); }
-    .result-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 6px currentColor; cursor: pointer; transition: opacity 0.2s, box-shadow 0.2s; }
-    .result-dot.off { opacity: 0.18; box-shadow: none !important; }
-    #toggle-all-btn { padding: 2px 8px; font-size: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #8b949e; cursor: pointer; transition: background 0.15s, color 0.15s; white-space: nowrap; }
-    #toggle-all-btn:hover { background: rgba(255,255,255,0.1); color: #e6edf3; }
+    .result-item:hover { background: #f6f8fa; }
+    .result-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; cursor: pointer; transition: opacity 0.2s; }
+    .result-dot.off { opacity: 0.2; }
+    #toggle-all-btn { padding: 2px 8px; font-size: 10px; border-radius: 4px; border: 1px solid #d0d7de; background: #f6f8fa; color: #57606a; cursor: pointer; transition: background 0.12s; white-space: nowrap; }
+    #toggle-all-btn:hover { background: #eaeef2; color: #1f2328; }
 
-    .result-eye-btn { padding: 4px 6px; background: transparent; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.08); border-radius: 4px; color: #4a5568; cursor: pointer; transition: color 0.15s, border-color 0.15s, background 0.15s; }
-    .result-eye-btn:hover { color: #58a6ff; border-color: rgba(56,139,253,0.4); background: rgba(56,139,253,0.08); }
+    .result-eye-btn { padding: 4px 6px; background: transparent; flex-shrink: 0; border: 1px solid #d0d7de; border-radius: 4px; color: #8c959f; cursor: pointer; transition: color 0.12s, border-color 0.12s, background 0.12s; }
+    .result-eye-btn:hover { color: #0969da; border-color: rgba(9,105,218,0.4); background: #ddf4ff; }
 
-    #settings-btn { display: flex; align-items: center; gap: 5px; padding: 5px 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10); border-radius: 6px; color: #8b949e; font-size: 12px; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: background 0.15s, color 0.15s; }
-    #settings-btn:hover, #settings-btn.open { background: rgba(255,255,255,0.1); color: #e6edf3; }
-
-    #settings-panel {
-      display: none; position: fixed; top: 52px; right: 0; width: 252px; z-index: 150;
-      background: rgba(13,17,23,0.97); border-left: 1px solid rgba(255,255,255,0.07);
-      border-bottom: 1px solid rgba(255,255,255,0.07); backdrop-filter: blur(14px); padding: 14px 16px;
-    }
-    #settings-panel.open { display: block; }
-    .settings-section { margin-bottom: 16px; }
-    .settings-section:last-child { margin-bottom: 0; }
-    .settings-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #6e7681; margin-bottom: 8px; }
-    .settings-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-    .settings-row label { font-size: 12px; color: #8b949e; flex: 1; }
-    .settings-row input[type=range] { flex: 1; accent-color: #388bfd; cursor: pointer; }
-    .settings-row span { font-size: 11px; color: #e6edf3; width: 28px; text-align: right; }
-    .settings-key-input {
-      width: 100%; padding: 5px 8px; background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.1); border-radius: 5px; color: #e6edf3;
-      font-size: 11px; outline: none; font-family: "SF Mono","Fira Code",monospace;
-      transition: border-color 0.15s;
-    }
-    .settings-key-input:focus { border-color: #388bfd; }
-    .settings-key-status { font-size: 10px; color: #6e7681; margin-top: 4px; }
-    .dl-btn { display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px 10px; margin-bottom: 6px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #e6edf3; font-size: 12px; cursor: pointer; transition: background 0.15s, border-color 0.15s; text-align: left; }
-    .dl-btn:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.2); }
-    .dl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
     .result-info { flex: 1; min-width: 0; }
-    .result-label { font-size: 13px; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .result-pos { font-size: 10px; color: #6e7681; font-family: "SF Mono","Fira Code",monospace; margin-top: 1px; }
-    .result-frames-btn { margin-top: 4px; padding: 2px 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: #8b949e; font-size: 10px; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s; }
-    .result-frames-btn:hover { background: rgba(56,139,253,0.12); color: #58a6ff; border-color: #388bfd; }
+    .result-label { font-size: 13px; font-weight: 500; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .result-pos { font-size: 10px; color: #8c959f; font-family: "SF Mono","Fira Code",monospace; margin-top: 1px; }
+    .result-frames-btn { margin-top: 4px; padding: 2px 8px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 4px; color: #57606a; font-size: 10px; cursor: pointer; white-space: nowrap; transition: background 0.12s, color 0.12s; }
+    .result-frames-btn:hover { background: #ddf4ff; color: #0969da; border-color: #0969da; }
 
-    #lightbox { display: none; position: fixed; inset: 0; z-index: 400; background: rgba(0,0,0,0.88); align-items: center; justify-content: center; }
+    /* ─── Lightbox ──────────────────────────────────────────────────────── */
+    #lightbox { display: none; position: fixed; inset: 0; z-index: 400; background: rgba(0,0,0,0.82); align-items: center; justify-content: center; }
     #lightbox.open { display: flex; }
     #lightbox-content { position: relative; display: inline-block; max-width: 90vw; max-height: 90vh; }
-    #lightbox-img { display: block; max-width: 90vw; max-height: 90vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,0.7); }
-    #lightbox-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; border-radius: 6px; }
+    #lightbox-img { display: block; max-width: 90vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,0.7); }
+    #lightbox-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; border-radius: 8px; }
     #lightbox-close { position: absolute; top: 16px; right: 20px; font-size: 28px; color: #fff; cursor: pointer; line-height: 1; opacity: 0.7; z-index: 1; }
     #lightbox-close:hover { opacity: 1; }
     #lightbox-nav { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; }
-    .lb-btn { padding: 6px 16px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; font-size: 13px; cursor: pointer; }
-    .lb-btn:hover { background: rgba(255,255,255,0.2); }
+    .lb-btn { padding: 6px 16px; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; color: #fff; font-size: 13px; cursor: pointer; }
+    .lb-btn:hover { background: rgba(255,255,255,0.25); }
 
-    #status-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; padding: 7px 16px; background: rgba(13,17,23,0.92); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; font-size: 12px; color: #8b949e; backdrop-filter: blur(10px); pointer-events: none; white-space: nowrap; max-width: calc(100vw - 40px); overflow: hidden; text-overflow: ellipsis; transition: opacity 0.3s; }
+    /* ─── Status bar ────────────────────────────────────────────────────── */
+    #status-bar {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100;
+      padding: 7px 16px; background: rgba(255,255,255,0.96); border: 1px solid rgba(0,0,0,0.1);
+      border-radius: 20px; font-size: 12px; color: #57606a;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+      pointer-events: none; white-space: nowrap; max-width: calc(100vw - 300px);
+      overflow: hidden; text-overflow: ellipsis;
+    }
 
-    #loading { position: fixed; inset: 0; z-index: 200; background: #0d1117; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; transition: opacity 0.4s; }
+    /* ─── Loading overlay ───────────────────────────────────────────────── */
+    #loading {
+      position: fixed; inset: 0; z-index: 200; background: #111318;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      transition: opacity 0.4s;
+    }
     #loading.hidden { opacity: 0; pointer-events: none; }
-    .spinner { width: 28px; height: 28px; border: 2px solid rgba(255,255,255,0.08); border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.75s linear infinite; }
+    .spinner { width: 28px; height: 28px; border: 2px solid rgba(255,255,255,0.1); border-top-color: #0969da; border-radius: 50%; animation: spin 0.75s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #loading-msg { font-size: 13px; color: #8b949e; }
+    #loading-msg { font-size: 13px; color: rgba(255,255,255,0.5); }
 
-    #drop-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(56,139,253,0.07); border: 2px dashed rgba(56,139,253,0.6); margin: 10px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 600; color: #58a6ff; pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+    /* ─── Drop overlay ──────────────────────────────────────────────────── */
+    #drop-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(9,105,218,0.06); border: 2px dashed rgba(9,105,218,0.5); margin: 10px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 600; color: #0969da; pointer-events: none; opacity: 0; transition: opacity 0.15s; }
     #drop-overlay.visible { opacity: 1; }
 
-    .bbox-label { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: -apple-system, sans-serif; pointer-events: none; white-space: nowrap; letter-spacing: 0.03em; text-transform: capitalize; background: rgba(13,17,23,0.85); border: 1px solid; backdrop-filter: blur(4px); }
+    .bbox-label { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: -apple-system, sans-serif; pointer-events: none; white-space: nowrap; background: rgba(255,255,255,0.92); border: 1px solid; backdrop-filter: blur(4px); }
 
-    #progress-bar { position: fixed; top: 52px; left: 0; right: 0; height: 2px; z-index: 101; background: transparent; pointer-events: none; }
-    #progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#388bfd,#58a6ff); transition: width 0.4s ease; box-shadow: 0 0 8px #388bfd; }
+    #progress-bar { position: fixed; top: 52px; left: 0; right: 0; height: 2px; z-index: 101; pointer-events: none; }
+    #progress-fill { height: 100%; width: 0%; background: #0969da; transition: width 0.4s ease; }
 
-    #controls-hint { position: fixed; bottom: 20px; right: 16px; z-index: 100; padding: 6px 12px; background: rgba(13,17,23,0.75); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; font-size: 10px; color: #4a5568; pointer-events: none; line-height: 1.7; }
-    #controls-hint span { color: #8b949e; }
+    #controls-hint { position: fixed; bottom: 20px; right: 16px; z-index: 100; padding: 6px 12px; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; font-size: 10px; color: #8c959f; pointer-events: none; line-height: 1.7; }
+    #controls-hint span { color: #1f2328; font-weight: 500; }
+
+    /* Limited mode notice */
+    #limited-notice {
+      display: none; position: fixed; bottom: 56px; left: 50%; transform: translateX(-50%);
+      z-index: 100; padding: 6px 14px; background: rgba(255,248,196,0.96);
+      border: 1px solid rgba(154,103,0,0.3); border-radius: 20px;
+      font-size: 11px; color: #9a6700; pointer-events: none; white-space: nowrap;
+    }
+    #limited-notice.show { display: block; }
   </style>
 </head>
 <body>
 
   <div id="topbar">
     <div class="logo">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
         <line x1="12" y1="22" x2="12" y2="15.5"/>
         <polyline points="22 8.5 12 15.5 2 8.5"/>
       </svg>
       Splat Analyzer
-      <a href="/">← Home</a>
+      <a class="logo-home" href="/">← Home</a>
     </div>
     <div class="sep"></div>
+
     <label id="file-label" for="file-input">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
         <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 018 4.25V1.5H3.75zm6.75.5v2.25c0 .138.112.25.25.25h2.25L10.5 2z"/>
       </svg>
       Open Splat
     </label>
-    <input type="file" id="file-input" accept=".ply,.splat,.spz,.sogs,.ksplat" style="display:none">
-    <span id="filename">No file selected</span>
+    <input type="file" id="file-input" accept=".ply,.splat,.spz,.ksplat" style="display:none">
+    <span id="filename">No file</span>
     <div class="sep"></div>
-    <input id="prompt" type="text" placeholder="Objects to detect: sofa, TV, chair…" value="television, sofa, armchair, air conditioner">
-    <button id="analyze-btn" disabled>Analyze →</button>
+
+    <div id="load-controls">
+      <div class="mode-tabs">
+        <button class="mtab active" id="mtab-jobid">Job ID</button>
+        <button class="mtab" id="mtab-upload">Upload JSON</button>
+      </div>
+
+      <div id="lpanel-jobid" class="lpanel">
+        <input id="job-id-input" class="topbar-input" type="text" placeholder="Paste job ID…" spellcheck="false" autocomplete="off">
+        <button id="load-jobid-btn" class="load-btn">Load</button>
+      </div>
+
+      <div id="lpanel-upload" class="lpanel" style="display:none">
+        <label id="json-file-btn" for="json-input">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 018 4.25V1.5H3.75zm6.75.5v2.25c0 .138.112.25.25.25h2.25L10.5 2z"/>
+          </svg>
+          JSON
+        </label>
+        <input type="file" id="json-input" accept=".json" style="display:none">
+        <span id="json-fname">No file</span>
+        <button id="load-upload-btn" class="load-btn" disabled>Load</button>
+      </div>
+    </div>
+
     <div class="sep"></div>
     <button id="settings-btn">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -237,8 +343,7 @@
   <div id="settings-panel">
     <div class="settings-section">
       <div class="settings-label">API Key</div>
-      <input class="settings-key-input" type="password" id="api-key-input"
-             placeholder="wmd_…" autocomplete="off" spellcheck="false">
+      <input class="settings-key-input" type="password" id="api-key-input" placeholder="wmd_…" autocomplete="off" spellcheck="false">
       <div class="settings-key-status" id="api-key-status">No key set</div>
     </div>
     <div class="settings-section">
@@ -257,7 +362,7 @@
       </button>
       <button class="dl-btn" id="dl-frames-btn" disabled>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Raw Frames + Depth (zip)
+        Frames + Depth (zip)
       </button>
     </div>
   </div>
@@ -267,8 +372,8 @@
   <div id="results">
     <div id="results-tabs">
       <div class="results-tab active" data-tab="objects">Objects</div>
-      <div class="results-tab" data-tab="frames">Frames</div>
-      <div class="results-tab" data-tab="cameras">Cameras</div>
+      <div class="results-tab" id="tab-frames-btn" data-tab="frames">Frames</div>
+      <div class="results-tab" id="tab-cameras-btn" data-tab="cameras">Cameras</div>
     </div>
     <div id="tab-objects" class="active">
       <div id="results-header">
@@ -281,7 +386,7 @@
       <div id="results-list"></div>
     </div>
     <div id="tab-frames">
-      <div id="results-header">Rendered Views <span id="frames-count" class="results-badge">0</span></div>
+      <div id="results-header">Frames <span id="frames-count" class="results-badge">0</span></div>
       <div id="frames-controls">
         <button class="frames-toggle active" id="toggle-rgb">RGB</button>
         <button class="frames-toggle" id="toggle-depth">Depth</button>
@@ -289,7 +394,7 @@
       <div id="frames-grid"></div>
     </div>
     <div id="tab-cameras">
-      <div id="results-header">Camera Positions <span id="cameras-count" class="results-badge">0</span></div>
+      <div id="results-header">Cameras <span id="cameras-count" class="results-badge">0</span></div>
       <div id="cameras-list"></div>
     </div>
   </div>
@@ -302,12 +407,13 @@
     </div>
     <div id="lightbox-nav">
       <button class="lb-btn" id="lb-prev">&#8592; Prev</button>
-      <span id="lb-index" style="color:#8b949e;font-size:12px;align-self:center;"></span>
+      <span id="lb-index" style="color:rgba(255,255,255,0.6);font-size:12px;align-self:center;"></span>
       <button class="lb-btn" id="lb-next">Next &#8594;</button>
     </div>
   </div>
 
-  <div id="status-bar">Drop a .ply file or click Open Splat</div>
+  <div id="status-bar">Drop a .ply or use Job ID / Upload JSON to load detections</div>
+  <div id="limited-notice">Upload mode — no raw frames available</div>
   <div id="controls-hint">
     <span>WASD</span> move &nbsp;·&nbsp; <span>Q/E</span> up/down<br>
     <span>Drag</span> look &nbsp;·&nbsp; <span>Scroll</span> zoom
@@ -342,46 +448,43 @@
       return k ? path + "?key=" + encodeURIComponent(k) : path;
     }
 
-    // Check if we were launched from root page with a job pre-loaded
+    // ── Hash preload ──────────────────────────────────────────────────────────
     const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
     const preloadJobId  = hashParams.get("job");
     const preloadApiKey = hashParams.get("key");
-    if (preloadApiKey) {
-      localStorage.setItem("wmd_api_key", preloadApiKey);
-      location.hash = "";
-    }
+    if (preloadApiKey) localStorage.setItem("wmd_api_key", preloadApiKey);
+    if (location.hash) history.replaceState(null, "", location.pathname);
 
     // ── API key settings ──────────────────────────────────────────────────────
     const apiKeyInput  = document.getElementById("api-key-input");
     const apiKeyStatus = document.getElementById("api-key-status");
     apiKeyInput.value  = getApiKey();
     updateApiKeyStatus();
-
     apiKeyInput.addEventListener("input", () => {
       localStorage.setItem("wmd_api_key", apiKeyInput.value.trim());
       updateApiKeyStatus();
     });
     function updateApiKeyStatus() {
       const k = getApiKey();
-      if (k) { apiKeyStatus.textContent = "Set: " + k.slice(0,12) + "…"; apiKeyStatus.style.color = "#3fb950"; }
-      else    { apiKeyStatus.textContent = "No key — analysis will fail"; apiKeyStatus.style.color = "#f85149"; }
+      if (k) { apiKeyStatus.textContent = "Set: " + k.slice(0,12) + "…"; apiKeyStatus.style.color = "#1a7f37"; }
+      else    { apiKeyStatus.textContent = "No key — load will fail"; apiKeyStatus.style.color = "#cf222e"; }
     }
 
     // ── Colour map ────────────────────────────────────────────────────────────
     const COLOURS = {
-      television:"#00e5ff",tv:"#00e5ff",monitor:"#00e5ff",screen:"#00e5ff",
-      sofa:"#00ff88",couch:"#00ff88",
-      armchair:"#ffaa00",chair:"#ffaa00",
-      desk:"#ff69b4",table:"#ff69b4",
-      "air conditioner":"#4488ff",ac:"#4488ff",
-      bed:"#c084fc",cabinet:"#e879f9",wardrobe:"#e879f9",
-      lamp:"#fde047",light:"#fde047",
-      refrigerator:"#67e8f9",fridge:"#67e8f9",
+      television:"#0969da",tv:"#0969da",monitor:"#0969da",screen:"#0969da",
+      sofa:"#1a7f37",couch:"#1a7f37",
+      armchair:"#9a3f00",chair:"#9a3f00",
+      desk:"#8250df",table:"#8250df",
+      "air conditioner":"#0550ae",ac:"#0550ae",
+      bed:"#bf3989",cabinet:"#bf3989",wardrobe:"#bf3989",
+      lamp:"#9a6700",light:"#9a6700",
+      refrigerator:"#0e7490",fridge:"#0e7490",
     };
     function labelColour(label) {
       const l = label.toLowerCase();
       for (const [k, v] of Object.entries(COLOURS)) if (l.includes(k)) return v;
-      return "#ffffff";
+      return "#57606a";
     }
 
     // ── Three.js setup ────────────────────────────────────────────────────────
@@ -398,7 +501,7 @@
     document.body.appendChild(labelRenderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0d1117);
+    scene.background = new THREE.Color(0x111318);
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 2000);
     camera.position.set(0, 2, 10);
     camera.lookAt(0, 0, 0);
@@ -430,8 +533,7 @@
     document.addEventListener("mouseup", () => { isDragging = false; viewport.classList.remove("dragging"); });
     viewport.addEventListener("wheel", (e) => {
       e.preventDefault();
-      const fwd = new THREE.Vector3();
-      camera.getWorldDirection(fwd);
+      const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
       camera.position.addScaledVector(fwd, -e.deltaY * moveSpeed * 0.1);
     }, { passive: false });
     document.addEventListener("keydown", (e) => {
@@ -472,36 +574,72 @@
     });
 
     // ── State ─────────────────────────────────────────────────────────────────
-    let currentSplat = null, loadedFile = null, analysing = false;
+    let currentSplat = null, loadedFile = null;
     let currentJobId = null, currentRgbUrls = [], currentDepthUrls = [];
     let showingDepth = false, lightboxIdx = 0, lightboxUrls = [], lightboxAnnotMap = null;
     let cameraGroupsData = [], frameAnnotationsData = {}, objectMeshes = [];
     let currentLineWidth = 2, currentDetections = [], flyTo = null;
+    let loadMode = "jobid";
 
     // ── UI refs ───────────────────────────────────────────────────────────────
-    const fileInput = document.getElementById("file-input");
-    const promptInput = document.getElementById("prompt");
-    const analyzeBtn = document.getElementById("analyze-btn");
-    const statusBar = document.getElementById("status-bar");
-    const resultsPanel = document.getElementById("results");
-    const resultsList = document.getElementById("results-list");
-    const resultsCount = document.getElementById("results-count");
-    const framesGrid = document.getElementById("frames-grid");
-    const framesCount = document.getElementById("frames-count");
-    const camerasList = document.getElementById("cameras-list");
-    const camerasCount = document.getElementById("cameras-count");
-    const filenameEl = document.getElementById("filename");
-    const loadingEl = document.getElementById("loading");
-    const loadingMsg = document.getElementById("loading-msg");
-    const dropOverlay = document.getElementById("drop-overlay");
-    const progressFill = document.getElementById("progress-fill");
-    const lightbox = document.getElementById("lightbox");
-    const lightboxImg = document.getElementById("lightbox-img");
-    const lightboxCanvas = document.getElementById("lightbox-canvas");
-    const lbIndex = document.getElementById("lb-index");
-    const toggleRgb = document.getElementById("toggle-rgb");
-    const toggleDepth = document.getElementById("toggle-depth");
-    const toggleAllBtn = document.getElementById("toggle-all-btn");
+    const fileInput     = document.getElementById("file-input");
+    const filenameEl    = document.getElementById("filename");
+    const statusBar     = document.getElementById("status-bar");
+    const resultsPanel  = document.getElementById("results");
+    const resultsList   = document.getElementById("results-list");
+    const resultsCount  = document.getElementById("results-count");
+    const framesGrid    = document.getElementById("frames-grid");
+    const framesCount   = document.getElementById("frames-count");
+    const camerasList   = document.getElementById("cameras-list");
+    const camerasCount  = document.getElementById("cameras-count");
+    const loadingEl     = document.getElementById("loading");
+    const loadingMsg    = document.getElementById("loading-msg");
+    const dropOverlay   = document.getElementById("drop-overlay");
+    const progressFill  = document.getElementById("progress-fill");
+    const lightbox      = document.getElementById("lightbox");
+    const lightboxImg   = document.getElementById("lightbox-img");
+    const lightboxCanvas= document.getElementById("lightbox-canvas");
+    const lbIndex       = document.getElementById("lb-index");
+    const toggleRgb     = document.getElementById("toggle-rgb");
+    const toggleDepth   = document.getElementById("toggle-depth");
+    const toggleAllBtn  = document.getElementById("toggle-all-btn");
+    const limitedNotice = document.getElementById("limited-notice");
+    const jobIdInput    = document.getElementById("job-id-input");
+    const loadJobIdBtn  = document.getElementById("load-jobid-btn");
+    const jsonInput     = document.getElementById("json-input");
+    const jsonFname     = document.getElementById("json-fname");
+    const loadUploadBtn = document.getElementById("load-upload-btn");
+
+    // ── Mode switching ────────────────────────────────────────────────────────
+    document.getElementById("mtab-jobid").addEventListener("click", () => setMode("jobid"));
+    document.getElementById("mtab-upload").addEventListener("click", () => setMode("upload"));
+
+    function setMode(mode) {
+      loadMode = mode;
+      document.getElementById("mtab-jobid").classList.toggle("active", mode === "jobid");
+      document.getElementById("mtab-upload").classList.toggle("active", mode === "upload");
+      document.getElementById("lpanel-jobid").style.display = mode === "jobid" ? "flex" : "none";
+      document.getElementById("lpanel-upload").style.display = mode === "upload" ? "flex" : "none";
+    }
+
+    function setTabsForMode(mode) {
+      const framesBtn  = document.getElementById("tab-frames-btn");
+      const camerasBtn = document.getElementById("tab-cameras-btn");
+      if (mode === "upload") {
+        framesBtn.style.display  = "none";
+        camerasBtn.style.display = "none";
+        // Switch to objects tab
+        document.querySelectorAll(".results-tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll("#tab-objects,#tab-frames,#tab-cameras").forEach(p => p.classList.remove("active"));
+        document.querySelector('[data-tab="objects"]').classList.add("active");
+        document.getElementById("tab-objects").classList.add("active");
+        limitedNotice.classList.add("show");
+      } else {
+        framesBtn.style.display  = "";
+        camerasBtn.style.display = "";
+        limitedNotice.classList.remove("show");
+      }
+    }
 
     // ── Visibility toggles ────────────────────────────────────────────────────
     function setObjectVisible(idx, visible) {
@@ -518,12 +656,12 @@
     });
 
     // ── Settings panel ────────────────────────────────────────────────────────
-    const settingsBtn = document.getElementById("settings-btn");
+    const settingsBtn   = document.getElementById("settings-btn");
     const settingsPanel = document.getElementById("settings-panel");
+    const dlJsonBtn     = document.getElementById("dl-json-btn");
+    const dlFramesBtn   = document.getElementById("dl-frames-btn");
     const lineWidthSlider = document.getElementById("line-width-slider");
-    const lineWidthVal = document.getElementById("line-width-val");
-    const dlJsonBtn = document.getElementById("dl-json-btn");
-    const dlFramesBtn = document.getElementById("dl-frames-btn");
+    const lineWidthVal    = document.getElementById("line-width-val");
 
     settingsBtn.addEventListener("click", (e) => { e.stopPropagation(); settingsPanel.classList.toggle("open"); settingsBtn.classList.toggle("open", settingsPanel.classList.contains("open")); });
     document.addEventListener("click", (e) => { if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) { settingsPanel.classList.remove("open"); settingsBtn.classList.remove("open"); } });
@@ -585,7 +723,7 @@
       });
     }
 
-    // ── Lightbox box overlay ──────────────────────────────────────────────────
+    // ── Lightbox ──────────────────────────────────────────────────────────────
     function drawLightboxBoxes() {
       const ctx = lightboxCanvas.getContext("2d");
       lightboxCanvas.width = 512; lightboxCanvas.height = 512;
@@ -602,7 +740,7 @@
         ctx.font = "bold 13px -apple-system, sans-serif";
         const tw = ctx.measureText(txt).width, lh = 18;
         const lx = x1, ly = Math.max(y1 - lh, 0);
-        ctx.fillStyle = "rgba(13,17,23,0.82)"; ctx.fillRect(lx, ly, tw+8, lh);
+        ctx.fillStyle = "rgba(255,255,255,0.88)"; ctx.fillRect(lx, ly, tw+8, lh);
         ctx.fillStyle = color; ctx.fillText(txt, lx+4, ly+lh-4);
       }
     }
@@ -619,9 +757,7 @@
       if (!obj.frames || !obj.frames.length) return;
       lightboxUrls = obj.frames.map(f => `/api/v1/jobs/${currentJobId}/frames/frame_${String(f.frame_idx).padStart(4,"0")}.png`);
       lightboxAnnotMap = {};
-      obj.frames.forEach((f, i) => {
-        lightboxAnnotMap[lightboxUrls[i]] = frameAnnotationsData[String(f.frame_idx)] || [];
-      });
+      obj.frames.forEach((f, i) => { lightboxAnnotMap[lightboxUrls[i]] = frameAnnotationsData[String(f.frame_idx)] || []; });
       openLightbox(0);
     }
     function closeLightbox() {
@@ -652,7 +788,7 @@
       const m = group.first_transform;
       camera.lookAt(cx + m[0][2], -cy - m[1][2], -cz - m[2][2]);
       camEuler.setFromQuaternion(camera.quaternion, "YXZ");
-      setStatus(`Teleported to ${group.label} — drag to look, WASD to move`);
+      setStatus(`Teleported to ${group.label}`);
     }
 
     function clearBoxes() {
@@ -666,16 +802,13 @@
 
     async function loadSplat(file) {
       if (currentSplat) { scene.remove(currentSplat); currentSplat = null; }
-      clearBoxes();
       showLoad(`Loading ${file.name}…`); setStatus(`Reading ${file.name}…`);
       const bytes = await file.arrayBuffer();
       currentSplat = new SplatMesh({
-        fileBytes: bytes, fileName: file.name,
+        fileBytes: new Uint8Array(bytes), fileName: file.name,
         onLoad: async (mesh) => {
           mesh.rotation.x = Math.PI;
           hideLoad();
-          const mb = (file.size/1048576).toFixed(1);
-          setStatus(`${file.name} — ${mb} MB  ·  Drag to look  ·  WASD to move  ·  Analyze to detect`);
           try {
             const box = new THREE.Box3().setFromObject(mesh);
             if (!box.isEmpty()) {
@@ -687,9 +820,25 @@
               camera.lookAt(center); camEuler.setFromQuaternion(camera.quaternion, "YXZ");
             }
           } catch (_) {}
+          setStatus(`${file.name} — drag to look · WASD to move`);
         },
       });
       scene.add(currentSplat);
+    }
+
+    async function loadSplatFromUrl(url) {
+      if (currentSplat) { scene.remove(currentSplat); currentSplat = null; }
+      setStatus("Downloading splat from server…");
+      try {
+        const res = await fetch(url, { headers: authHeaders() });
+        if (!res.ok) throw new Error(res.status);
+        const bytes = await res.arrayBuffer();
+        const fakeFile = { name: "scene.ply", arrayBuffer: () => Promise.resolve(bytes) };
+        await loadSplat({ name: "scene.ply", arrayBuffer: () => Promise.resolve(bytes), size: bytes.byteLength });
+        // Reuse the same loadSplat logic via SplatMesh directly
+      } catch (err) {
+        setStatus("Splat not available on server — open locally via Open Splat");
+      }
     }
 
     function buildCamerasList(groups) {
@@ -701,12 +850,14 @@
         item.className = "camera-item";
         item.innerHTML = `
           <div class="camera-header">
-            <div class="camera-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></div>
+            <div class="camera-icon">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0969da" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+            </div>
             <span class="camera-name">${group.label}</span>
           </div>
           <div class="camera-pos">x: ${px.toFixed(3)}&nbsp;&nbsp;y: ${py.toFixed(3)}&nbsp;&nbsp;z: ${pz.toFixed(3)}</div>
           <div class="camera-thumb-row">
-            <img class="camera-thumb" src="${imgUrl(group.first_frame_url)}" loading="lazy" title="First frame from ${group.label}">
+            <img class="camera-thumb" src="${imgUrl(group.first_frame_url)}" loading="lazy">
             <div class="camera-btns">
               <button class="cam-btn teleport">Go here →</button>
               <button class="cam-btn depth-btn">Depth</button>
@@ -727,12 +878,14 @@
       });
     }
 
-    function addBoxes(interactions, frameUrls, depthUrls, groups, frameAnnots) {
+    function addBoxes(interactions, frameUrls, depthUrls, groups, frameAnnots, jobId) {
       clearBoxes();
-      currentJobId = interactions._jobId;
-      currentDetections = interactions.filter(i => typeof i === "object" && i.label);
-      currentRgbUrls = frameUrls; currentDepthUrls = depthUrls;
-      cameraGroupsData = groups; frameAnnotationsData = frameAnnots || {};
+      currentJobId       = jobId || null;
+      currentDetections  = interactions.filter(i => typeof i === "object" && i.label);
+      currentRgbUrls     = frameUrls;
+      currentDepthUrls   = depthUrls;
+      cameraGroupsData   = groups;
+      frameAnnotationsData = frameAnnots || {};
 
       if (frameUrls.length) {
         framesCount.textContent = String(frameUrls.length);
@@ -744,29 +897,37 @@
       buildCamerasList(groups);
 
       if (!interactions.length) {
-        setStatus("No objects found — try adjusting your prompt."); resultsPanel.classList.add("open"); return;
+        setStatus("No objects found.");
+        resultsPanel.classList.add("open");
+        return;
       }
 
       interactions.forEach((item) => {
         const col = new THREE.Color(labelColour(item.label));
         const hex = labelColour(item.label);
-        const px =  item.position.x, py = -item.position.y, pz = -item.position.z;
-        const { x:sx, y:sy, z:sz } = item.scale;
-        const { x:rx, y:ry, z:rz, w:rw } = item.rotation;
-        const quat = new THREE.Quaternion(rx, -ry, -rz, rw);
+        const px  =  item.position.x, py = -item.position.y, pz = -item.position.z;
+        // Support both debug format (scale+rotation) and clean format (size, no rotation)
+        const size = item.scale || item.size || { x: 0.5, y: 0.5, z: 0.5 };
+        const { x: sx, y: sy, z: sz } = size;
+        const rot  = item.rotation || { x: 0, y: 0, z: 0, w: 1 };
+        const quat = new THREE.Quaternion(rot.x, -rot.y, -rot.z, rot.w);
 
         const edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(sx, sy, sz));
         const lineGeo  = new LineSegmentsGeometry();
         lineGeo.setPositions(edgesGeo.attributes.position.array);
         const lineMat = new LineMaterial({ color: col, linewidth: currentLineWidth, resolution: new THREE.Vector2(window.innerWidth, window.innerHeight) });
-        const lines = new LineSegments2(lineGeo, lineMat);
+        const lines   = new LineSegments2(lineGeo, lineMat);
         lines.position.set(px, py, pz); lines.quaternion.copy(quat); boxGroup.add(lines);
 
-        const fill = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.06, side: THREE.DoubleSide, depthWrite: false }));
+        const fill = new THREE.Mesh(
+          new THREE.BoxGeometry(sx, sy, sz),
+          new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.06, side: THREE.DoubleSide, depthWrite: false })
+        );
         fill.position.set(px, py, pz); fill.quaternion.copy(quat); boxGroup.add(fill);
 
         const div = document.createElement("div");
-        div.className = "bbox-label"; div.textContent = item.label; div.style.color = hex; div.style.borderColor = hex+"55";
+        div.className = "bbox-label"; div.textContent = item.label;
+        div.style.color = hex; div.style.borderColor = hex + "44";
         const label2d = new CSS2DObject(div);
         label2d.position.set(px, py + sy/2 + 0.12, pz); boxGroup.add(label2d);
 
@@ -777,13 +938,13 @@
         row.className = "result-item";
         const frameCount = item.frames ? item.frames.length : 0;
         row.innerHTML = `
-          <div class="result-dot" style="background:${hex};box-shadow:0 0 6px ${hex};" title="Toggle visibility"></div>
+          <div class="result-dot" style="background:${hex}" title="Toggle"></div>
           <div class="result-info">
-            <div class="result-label">${item.label}</div>
+            <div class="result-label" style="color:${hex}">${item.label}</div>
             <div class="result-pos">${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)}</div>
             ${frameCount ? `<button class="result-frames-btn">${frameCount} frames ›</button>` : ""}
           </div>
-          <button class="result-eye-btn" title="Focus camera on this object">
+          <button class="result-eye-btn" title="Focus">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>`;
 
@@ -797,98 +958,146 @@
 
       resultsCount.textContent = String(interactions.length);
       resultsPanel.classList.add("open");
-      setStatus(`Found ${interactions.length} object${interactions.length!==1?"s":""} — ${groups.length} camera positions`);
-      dlJsonBtn.disabled = false; dlFramesBtn.disabled = false;
+      setStatus(`${interactions.length} object${interactions.length!==1?"s":""} · ${groups.length} cameras`);
+      dlJsonBtn.disabled = false;
+      dlFramesBtn.disabled = !jobId;
     }
 
-    // ── Analyse (async job flow) ───────────────────────────────────────────────
-    async function analyse() {
-      if (!loadedFile || analysing) return;
+    // ── Load by Job ID ────────────────────────────────────────────────────────
+    async function loadByJobId(jobId) {
+      jobId = jobId.trim();
+      if (!jobId) return;
       const apiKey = getApiKey();
       if (!apiKey) {
         setStatus("Enter your API key in Settings first.");
-        document.getElementById("settings-panel").classList.add("open");
-        document.getElementById("settings-btn").classList.add("open");
+        settingsPanel.classList.add("open"); settingsBtn.classList.add("open");
         return;
       }
-      analysing = true;
-      analyzeBtn.disabled = true; analyzeBtn.classList.add("loading"); analyzeBtn.textContent = "Analysing…";
-      clearBoxes(); setProgress(0);
 
-      let pct = 5;
-      const ticker = setInterval(() => { pct = Math.min(pct + (88 - pct) * 0.025, 88); setProgress(pct); }, 1200);
+      clearBoxes(); setProgress(15);
+      setStatus(`Loading job ${jobId.slice(0,8)}…`);
+      loadJobIdBtn.disabled = true;
 
       try {
-        // Step 1: Submit job
-        setStatus("Uploading file to server…");
-        const form = new FormData();
-        form.append("file",   loadedFile);
-        form.append("prompt", promptInput.value);
-        const t0  = Date.now();
-        const res = await fetch("/api/v1/detect", { method: "POST", headers: authHeaders(), body: form });
-        if (!res.ok) throw new Error(`Submit error ${res.status}: ${(await res.text()).slice(0,200)}`);
-        const { job_id } = await res.json();
-        setStatus("Job queued — rendering camera views…");
+        // Fetch detections
+        const rr = await fetch(`/api/v1/jobs/${jobId}/result/debug`, { headers: authHeaders() });
+        if (!rr.ok) throw new Error(`HTTP ${rr.status}: ${(await rr.text()).slice(0,200)}`);
+        const data = await rr.json();
 
-        // Step 2: Poll status
-        while (true) {
-          await sleep(3500);
-          const sr = await fetch(`/api/v1/jobs/${job_id}/status`, { headers: authHeaders() });
-          if (!sr.ok) throw new Error("Status poll failed");
-          const { status } = await sr.json();
-          if (status === "done") break;
-          if (status === "failed") throw new Error("Detection pipeline failed on server.");
-          setStatus(status === "running" ? "Detecting objects (~2-3 min)…" : "Starting pipeline…");
+        if (data.status === "pending" || data.status === "running") {
+          setStatus(`Job is still ${data.status} — wait for it to finish first.`);
+          return;
         }
 
-        clearInterval(ticker); setProgress(95);
-        setStatus("Loading results…");
+        setProgress(60);
+        setTabsForMode("jobid");
 
-        // Step 3: Fetch debug result
-        const rr = await fetch(`/api/v1/jobs/${job_id}/result/debug`, { headers: authHeaders() });
-        if (!rr.ok) throw new Error(`Result fetch error ${rr.status}`);
-        const data = await rr.json();
-        const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+        const interactions = Array.isArray(data.objects) ? data.objects : [];
+        const frameUrls    = data.frames         ?? [];
+        const depthUrls    = data.depth_frames   ?? [];
+        const groups       = data.camera_groups  ?? [];
+        const frameAnnots  = data.frame_annotations ?? {};
 
-        setProgress(100);
-        setTimeout(() => setProgress(0), 800);
+        addBoxes(interactions, frameUrls, depthUrls, groups, frameAnnots, jobId);
+        setProgress(80);
 
-        const interactions    = Array.isArray(data.objects) ? data.objects : [];
-        const frameUrls       = data.frames             ?? [];
-        const depthUrls       = data.depth_frames       ?? [];
-        const groups          = data.camera_groups      ?? [];
-        const frameAnnots     = data.frame_annotations  ?? {};
-        interactions._jobId   = job_id;
-        currentJobId          = job_id;
+        // Auto-load splat from server if not already loaded locally
+        if (!currentSplat) {
+          setStatus(`Loading splat from server…`);
+          try {
+            const sr = await fetch(`/api/v1/jobs/${jobId}/splat`, { headers: authHeaders() });
+            if (!sr.ok) throw new Error(sr.status);
+            const bytes = await sr.arrayBuffer();
+            if (currentSplat) { scene.remove(currentSplat); currentSplat = null; }
+            showLoad("Loading splat…");
+            currentSplat = new SplatMesh({
+              fileBytes: new Uint8Array(bytes), fileName: "scene.ply",
+              onLoad: (mesh) => {
+                mesh.rotation.x = Math.PI;
+                hideLoad();
+                try {
+                  const box = new THREE.Box3().setFromObject(mesh);
+                  if (!box.isEmpty()) {
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size   = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    moveSpeed = maxDim * 0.008;
+                    camera.position.copy(center).addScaledVector(new THREE.Vector3(0.2, 0.3, 1).normalize(), maxDim*2);
+                    camera.lookAt(center); camEuler.setFromQuaternion(camera.quaternion, "YXZ");
+                  }
+                } catch (_) {}
+                setStatus(`Job ${jobId.slice(0,8)} — ${interactions.length} objects · ${groups.length} cameras · ${frameUrls.length} frames`);
+              },
+            });
+            scene.add(currentSplat);
+          } catch (_) {
+            setStatus(`${interactions.length} objects loaded — splat file not available, open locally via Open Splat`);
+          }
+        }
 
-        addBoxes(interactions, frameUrls, depthUrls, groups, frameAnnots);
-        setStatus(`Done in ${elapsed}s — ${interactions.length} object${interactions.length!==1?"s":""} · ${groups.length} cameras`);
+        setProgress(0);
       } catch (err) {
-        clearInterval(ticker); setProgress(0);
         setStatus(`Error: ${err.message}`); console.error(err);
       } finally {
-        analysing = false; analyzeBtn.disabled = false; analyzeBtn.classList.remove("loading"); analyzeBtn.textContent = "Analyze →";
+        setProgress(0);
+        loadJobIdBtn.disabled = false;
       }
     }
 
-    // ── File handling ─────────────────────────────────────────────────────────
+    // ── Load from JSON file ───────────────────────────────────────────────────
+    function loadFromJsonFile(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data    = JSON.parse(e.target.result);
+          const objects = Array.isArray(data) ? data : (data.objects || []);
+          const jobId   = data.job_id || null;
+          setTabsForMode("upload");
+          addBoxes(objects, [], [], [], {}, jobId);
+          setStatus(`${objects.length} object${objects.length!==1?"s":""} from JSON — open a .ply to see the 3D scene`);
+        } catch (err) {
+          setStatus(`JSON parse error: ${err.message}`);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // ── Wire up load buttons ──────────────────────────────────────────────────
+    loadJobIdBtn.addEventListener("click", () => loadByJobId(jobIdInput.value));
+    jobIdInput.addEventListener("keydown", (e) => { if (e.key === "Enter") loadByJobId(jobIdInput.value); });
+
+    let selectedJsonFile = null;
+    jsonInput.addEventListener("change", (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      selectedJsonFile = f;
+      jsonFname.textContent = f.name.length > 18 ? f.name.slice(0,15) + "…" : f.name;
+      loadUploadBtn.disabled = false;
+    });
+    loadUploadBtn.addEventListener("click", () => {
+      if (selectedJsonFile) loadFromJsonFile(selectedJsonFile);
+    });
+
+    // ── File handling (splat) ─────────────────────────────────────────────────
     async function handleFile(file) {
       if (!file) return;
-      loadedFile = file; filenameEl.textContent = file.name; analyzeBtn.disabled = false;
+      loadedFile = file;
+      filenameEl.textContent = file.name.length > 20 ? file.name.slice(0,17) + "…" : file.name;
       await loadSplat(file);
     }
     fileInput.addEventListener("change", (e) => handleFile(e.target.files[0]));
-    analyzeBtn.addEventListener("click", analyse);
     document.addEventListener("dragover",  (e) => { e.preventDefault(); dropOverlay.classList.add("visible"); });
     document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) dropOverlay.classList.remove("visible"); });
     document.addEventListener("drop", (e) => { e.preventDefault(); dropOverlay.classList.remove("visible"); const f = e.dataTransfer?.files[0]; if (f) handleFile(f); });
 
     hideLoad();
-    setStatus("Drop a .ply file or click Open Splat");
+    setStatus("Drop a .ply or use Job ID / Upload JSON to load detections");
 
-    // Auto-load job from hash (launched from root page)
+    // Auto-load from hash
     if (preloadJobId && getApiKey()) {
-      setStatus(`Loading job ${preloadJobId.slice(0,8)}… (open a .ply to see the 3D view)`);
+      jobIdInput.value = preloadJobId;
+      setMode("jobid");
+      setTimeout(() => loadByJobId(preloadJobId), 200);
     }
   </script>
 </body>

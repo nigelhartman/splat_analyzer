@@ -134,7 +134,6 @@ async def _run_pipeline(job_id: str, ply_path: Path, prompt: str, job_dir: Path)
         (job_dir / "error.txt").write_text(stderr.decode()[-3000:])
         JOB_STATUS[job_id] = "failed"
     else:
-        ply_path.unlink(missing_ok=True)
         JOB_STATUS[job_id] = "done"
         logger.info(f"[{job_id}] Done")
 
@@ -292,6 +291,27 @@ async def get_result_debug(job_id: str, api_key: str = Depends(require_api_key))
         "camera_groups":     camera_groups,
         "frame_annotations": frame_annotations,
     }
+
+
+@app.get("/api/v1/jobs/{job_id}/splat", include_in_schema=False)
+async def get_splat(
+    job_id: str,
+    key: str = Query(None),
+    x_api_key: str = Header(None, alias="X-API-Key"),
+    authorization: str = Header(None),
+):
+    resolved = key or x_api_key
+    if not resolved and authorization and authorization.startswith("Bearer "):
+        resolved = authorization[7:]
+    if not _check_key(resolved):
+        raise HTTPException(401, "Invalid API key")
+    if "/" in job_id or ".." in job_id:
+        raise HTTPException(400, "Invalid job ID")
+    ply = WORK_DIR / job_id / "scene.ply"
+    if not ply.exists():
+        raise HTTPException(404, "Splat file not found or expired")
+    return FileResponse(ply, media_type="application/octet-stream",
+                        headers={"Content-Disposition": "inline; filename=scene.ply"})
 
 
 @app.get("/api/v1/jobs/{job_id}/frames/{filename}", include_in_schema=False)

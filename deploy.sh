@@ -59,6 +59,7 @@ if command -v rsync &>/dev/null; then
     "${SCRIPT_DIR}/requirements.txt" \
     "${SCRIPT_DIR}/Dockerfile" \
     "${SCRIPT_DIR}/.dockerignore" \
+    "${SCRIPT_DIR}/Caddyfile" \
     "${REMOTE}:${APP_DIR}/"
   rsync -az --progress \
     -e "ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no" \
@@ -66,7 +67,7 @@ if command -v rsync &>/dev/null; then
     "${SCRIPT_DIR}/webapp/" \
     "${REMOTE}:${APP_DIR}/webapp/"
 else
-  for f in pipeline.py render_cameras.py server.py requirements.txt Dockerfile .dockerignore; do
+  for f in pipeline.py render_cameras.py server.py requirements.txt Dockerfile .dockerignore Caddyfile; do
     scp -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${SCRIPT_DIR}/${f}" "${REMOTE}:${APP_DIR}/${f}"
   done
   for f in webapp/index.html webapp/debug.html webapp/admin.html; do
@@ -151,6 +152,9 @@ sudo docker rm   ${CONTAINER} 2>/dev/null && echo "  Removed old container" || t
 sudo fuser -k 8000/tcp 2>/dev/null && echo "  Killed stale process on :8000" || true
 tmux kill-session -t worldmodel 2>/dev/null || true
 
+# Create Docker network for app <-> Caddy communication
+sudo docker network create worldmodeldata-net 2>/dev/null && echo "  Created Docker network" || echo "  Network already exists"
+
 # Use --gpus all only when the GPU toolkit is available
 GPU_FLAG=""
 if command -v nvidia-smi &>/dev/null && sudo docker info 2>/dev/null | grep -q "Runtimes.*nvidia"; then
@@ -160,6 +164,7 @@ fi
 
 sudo docker run -d \\
   --name ${CONTAINER} \\
+  --network worldmodeldata-net \\
   --restart unless-stopped \\
   \${GPU_FLAG} \\
   -p 8000:8000 \\
@@ -170,6 +175,23 @@ sudo docker run -d \\
   ${IMAGE}
 
 echo "  Container started: \$(sudo docker inspect ${CONTAINER} --format '{{.Id}}' | head -c 12)"
+
+# ── Caddy reverse proxy (HTTPS) ──────────────────────────────────────────────
+echo ""
+echo ">> Starting Caddy (HTTPS reverse proxy)..."
+sudo docker stop worldmodeldata-caddy 2>/dev/null || true
+sudo docker rm   worldmodeldata-caddy 2>/dev/null || true
+sudo docker run -d \\
+  --name worldmodeldata-caddy \\
+  --network worldmodeldata-net \\
+  --restart unless-stopped \\
+  -p 80:80 \\
+  -p 443:443 \\
+  -v caddy-data:/data \\
+  -v caddy-config:/config \\
+  -v ${APP_DIR}/Caddyfile:/etc/caddy/Caddyfile:ro \\
+  caddy:2-alpine
+echo "  Caddy started"
 EOF
 
 # ── 6. Health check ──────────────────────────────────────────────────────────
@@ -196,10 +218,11 @@ echo ""
 echo "=================================================="
 echo "  Deployment complete!"
 echo ""
-echo "  Home page   ->  http://${SERVER_IP}:8000/"
-echo "  Debug view  ->  http://${SERVER_IP}:8000/debug"
-echo "  Admin panel ->  http://${SERVER_IP}:8000/admin"
-echo "  API docs    ->  http://${SERVER_IP}:8000/docs"
+echo "  HTTPS       ->  https://splatanalyzer.example.com/"
+echo "  Direct      ->  http://${SERVER_IP}:8000/"
+echo "  Debug view  ->  https://splatanalyzer.example.com/debug"
+echo "  Admin panel ->  https://splatanalyzer.example.com/admin"
+echo "  API docs    ->  https://splatanalyzer.example.com/docs"
 echo ""
 echo "  Admin credentials: ${ADMIN_USER} / ${ADMIN_PASSWORD}"
 echo "  (Change ADMIN_USER and ADMIN_PASSWORD in .env)"
