@@ -106,6 +106,17 @@
       50%       { opacity: 0.4; transform: scale(0.7); }
     }
 
+    .capture-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 12px; border-radius: var(--radius); border: 1px solid;
+      font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.12s;
+    }
+    .capture-btn.idle { background: var(--bg); border-color: var(--border); color: var(--text-secondary); }
+    .capture-btn.idle:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+    .capture-btn.recording { background: var(--danger-bg); border-color: rgba(207,34,46,0.4); color: var(--danger); animation: rec-pulse 1.2s ease-in-out infinite; }
+    @keyframes rec-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.75; } }
+    .capture-counter { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
     /* ── Stat cards grid ── */
     .stats-grid {
       display: grid;
@@ -299,6 +310,13 @@
       <div class="view-title-row">
         <span class="view-title">Dashboard</span>
         <span class="live-badge"><span class="live-dot"></span>Live</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+          <span class="capture-counter" id="capture-counter" style="display:none"></span>
+          <button class="capture-btn idle" id="capture-btn">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+            Start Capture
+          </button>
+        </div>
       </div>
 
       <div class="stats-grid" id="stats-grid">
@@ -470,6 +488,94 @@
     sessionStorage.removeItem("admin_token");
     showLogin();
   });
+
+  // ── Metrics capture ─────────────────────────────────────────────────────────
+  let captureActive   = false;
+  let captureData     = [];
+  let captureInterval = null;
+  const captureBtn     = document.getElementById("capture-btn");
+  const captureCounter = document.getElementById("capture-counter");
+
+  captureBtn.addEventListener("click", () => {
+    if (!captureActive) {
+      captureActive = true;
+      captureData   = [];
+      captureBtn.className = "capture-btn recording";
+      captureBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg> Stop & Download`;
+      captureCounter.style.display = "";
+      captureCounter.textContent   = "0 samples";
+      // Capture immediately, then every second
+      captureOnce();
+      captureInterval = setInterval(captureOnce, 1000);
+    } else {
+      stopCapture();
+    }
+  });
+
+  async function captureOnce() {
+    try {
+      const res = await fetch("/api/v1/admin/stats", { headers: authHdr() });
+      if (!res.ok) return;
+      const s = await res.json();
+      s.timestamp = new Date().toISOString();
+      captureData.push(s);
+      captureCounter.textContent = captureData.length + " sample" + (captureData.length !== 1 ? "s" : "");
+    } catch (_) {}
+  }
+
+  function stopCapture() {
+    clearInterval(captureInterval);
+    captureInterval = null;
+    captureActive   = false;
+    captureBtn.className = "capture-btn idle";
+    captureBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg> Start Capture`;
+    captureCounter.style.display = "none";
+    if (captureData.length) downloadMetricsCsv(captureData);
+    captureData = [];
+  }
+
+  function downloadMetricsCsv(data) {
+    const gpuCount = data[0]?.gpus?.length ?? 0;
+    const headers  = [
+      "timestamp", "cpu_percent",
+      "memory_used_gb", "memory_total_gb", "memory_percent",
+      "disk_used_gb", "disk_total_gb", "disk_percent",
+      "jobs_active", "jobs_total",
+    ];
+    for (let g = 0; g < gpuCount; g++) {
+      headers.push(`gpu${g}_name`, `gpu${g}_utilization`,
+                   `gpu${g}_memory_used_mb`, `gpu${g}_memory_total_mb`,
+                   `gpu${g}_memory_percent`, `gpu${g}_temperature`);
+    }
+    const rows = data.map(s => {
+      const row = [
+        s.timestamp,
+        s.cpu?.percent ?? "",
+        s.memory?.used_gb ?? "", s.memory?.total_gb ?? "", s.memory?.percent ?? "",
+        s.disk?.used_gb ?? "",   s.disk?.total_gb ?? "",   s.disk?.percent ?? "",
+        s.jobs?.active ?? "",    s.jobs?.total ?? "",
+      ];
+      for (let g = 0; g < gpuCount; g++) {
+        const gpu = s.gpus?.[g] ?? {};
+        row.push(`"${String(gpu.name ?? "").replace(/"/g, '""')}"`,
+                 gpu.utilization ?? "", gpu.memory_used_mb ?? "",
+                 gpu.memory_total_mb ?? "", gpu.memory_percent ?? "",
+                 gpu.temperature ?? "");
+      }
+      return row.join(",");
+    });
+    const csv  = [headers.join(","), ...rows].join("\n");
+    const ts   = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a    = Object.assign(document.createElement("a"),
+                   { href: URL.createObjectURL(blob), download: `server-metrics-${ts}.csv` });
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  // Stop capture on logout
+  const _origLogout = logoutBtn.onclick;
+  logoutBtn.addEventListener("click", () => { if (captureActive) stopCapture(); });
 
   // ── Dashboard stats ─────────────────────────────────────────────────────────
   function barColor(p) { return p > 80 ? "bar-red" : p > 60 ? "bar-yellow" : "bar-green"; }

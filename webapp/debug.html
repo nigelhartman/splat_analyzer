@@ -139,6 +139,18 @@
     .dl-btn:hover { background: #eaeef2; }
     .dl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
+    .settings-mode-toggle {
+      display: flex; border: 1px solid #d0d7de; border-radius: 6px; overflow: hidden;
+    }
+    .smode-btn {
+      flex: 1; padding: 5px 8px; font-size: 11px; font-weight: 500;
+      cursor: pointer; background: transparent; border: none; color: #57606a;
+      transition: background 0.12s, color 0.12s; white-space: nowrap;
+    }
+    .smode-btn:first-child { border-right: 1px solid #d0d7de; }
+    .smode-btn.active { background: #0969da; color: #fff; }
+    .smode-btn:not(.active):hover { background: #f6f8fa; color: #1f2328; }
+
     /* ─── Results panel ─────────────────────────────────────────────────── */
     #results {
       position: fixed; right: 0; top: 52px; bottom: 0; width: 268px; z-index: 100;
@@ -347,11 +359,28 @@
       <div class="settings-key-status" id="api-key-status">No key set</div>
     </div>
     <div class="settings-section">
+      <div class="settings-label">Render Mode</div>
+      <div class="settings-mode-toggle">
+        <button class="smode-btn active" id="smode-bbox">Bounding Box</button>
+        <button class="smode-btn" id="smode-splat">Splat</button>
+      </div>
+    </div>
+    <div class="settings-section">
       <div class="settings-label">Display</div>
-      <div class="settings-row">
+      <div class="settings-row" id="row-linewidth">
         <label>Box line width</label>
         <input type="range" id="line-width-slider" min="1" max="8" step="0.5" value="2">
         <span id="line-width-val">2px</span>
+      </div>
+      <div class="settings-row" id="row-intensity" style="display:none">
+        <label>Intensity</label>
+        <input type="range" id="intensity-slider" min="0.05" max="1" step="0.05" value="0.5">
+        <span id="intensity-val">50%</span>
+      </div>
+      <div class="settings-row" id="row-pointsize" style="display:none">
+        <label>Point size</label>
+        <input type="range" id="pointsize-slider" min="0.005" max="0.12" step="0.005" value="0.02">
+        <span id="pointsize-val">0.02</span>
       </div>
     </div>
     <div class="settings-section">
@@ -581,6 +610,15 @@
     let currentLineWidth = 2, currentDetections = [], flyTo = null;
     let loadMode = "jobid";
 
+    // ── Splat-highlight state ─────────────────────────────────────────────────
+    let splatRawBytes      = null;   // ArrayBuffer of the loaded PLY
+    let splatPositions     = null;   // Float32Array: world-space (x, -y, -z) per splat
+    let displayMode        = "bbox"; // "bbox" | "splat"
+    let splatIntensity     = 0.5;
+    let splatPointSize     = 0.02;
+    const splatHighlightGroup = new THREE.Group();
+    scene.add(splatHighlightGroup);
+
     // ── UI refs ───────────────────────────────────────────────────────────────
     const fileInput     = document.getElementById("file-input");
     const filenameEl    = document.getElementById("filename");
@@ -644,7 +682,13 @@
     // ── Visibility toggles ────────────────────────────────────────────────────
     function setObjectVisible(idx, visible) {
       const e = objectMeshes[idx]; if (!e) return;
-      e.visible = visible; e.meshes.forEach(m => { m.visible = visible; });
+      e.visible = visible;
+      // bbox geometry (lines + fill) only shown in bbox mode
+      if (e.meshes[0]) e.meshes[0].visible = (displayMode === "bbox") && visible;
+      if (e.meshes[1]) e.meshes[1].visible = (displayMode === "bbox") && visible;
+      if (e.meshes[2]) e.meshes[2].visible = visible; // label always follows visibility
+      // highlight points only shown in splat mode
+      if (e.highlightPoints) e.highlightPoints.visible = (displayMode === "splat") && visible;
       e.dot.classList.toggle("off", !visible);
     }
     function toggleObject(idx) { if (objectMeshes[idx]) setObjectVisible(idx, !objectMeshes[idx].visible); updateToggleAllBtn(); }
@@ -669,6 +713,26 @@
       currentLineWidth = parseFloat(lineWidthSlider.value);
       lineWidthVal.textContent = currentLineWidth + "px";
       objectMeshes.forEach(e => { if (e.lineMat) e.lineMat.linewidth = currentLineWidth; });
+    });
+
+    // ── Splat mode toggle ─────────────────────────────────────────────────────
+    document.getElementById("smode-bbox").addEventListener("click", () => setSplatMode("bbox"));
+    document.getElementById("smode-splat").addEventListener("click", () => setSplatMode("splat"));
+
+    const intensitySlider  = document.getElementById("intensity-slider");
+    const intensityVal     = document.getElementById("intensity-val");
+    const pointsizeSlider  = document.getElementById("pointsize-slider");
+    const pointsizeVal     = document.getElementById("pointsize-val");
+
+    intensitySlider.addEventListener("input", () => {
+      splatIntensity = parseFloat(intensitySlider.value);
+      intensityVal.textContent = Math.round(splatIntensity * 100) + "%";
+      objectMeshes.forEach(e => { if (e.highlightPoints) e.highlightPoints.material.opacity = splatIntensity; });
+    });
+    pointsizeSlider.addEventListener("input", () => {
+      splatPointSize = parseFloat(pointsizeSlider.value);
+      pointsizeVal.textContent = splatPointSize.toFixed(3);
+      objectMeshes.forEach(e => { if (e.highlightPoints) e.highlightPoints.material.size = splatPointSize; });
     });
     dlJsonBtn.addEventListener("click", () => {
       if (!currentDetections.length) return;
@@ -792,7 +856,8 @@
     }
 
     function clearBoxes() {
-      boxGroup.clear(); resultsList.innerHTML = ""; framesGrid.innerHTML = ""; camerasList.innerHTML = "";
+      boxGroup.clear(); splatHighlightGroup.clear();
+      resultsList.innerHTML = ""; framesGrid.innerHTML = ""; camerasList.innerHTML = "";
       resultsCount.textContent = "0"; framesCount.textContent = "0"; camerasCount.textContent = "0";
       currentRgbUrls = []; currentDepthUrls = []; cameraGroupsData = [];
       frameAnnotationsData = {}; objectMeshes = []; currentDetections = []; currentJobId = null;
@@ -804,6 +869,8 @@
       if (currentSplat) { scene.remove(currentSplat); currentSplat = null; }
       showLoad(`Loading ${file.name}…`); setStatus(`Reading ${file.name}…`);
       const bytes = await file.arrayBuffer();
+      splatRawBytes  = bytes;
+      splatPositions = null; // will be parsed lazily when splat mode is activated
       currentSplat = new SplatMesh({
         fileBytes: new Uint8Array(bytes), fileName: file.name,
         onLoad: async (mesh) => {
@@ -821,6 +888,8 @@
             }
           } catch (_) {}
           setStatus(`${file.name} — drag to look · WASD to move`);
+          // If already in splat mode, build highlights now that the splat is loaded
+          if (displayMode === "splat") setSplatMode("splat");
         },
       });
       scene.add(currentSplat);
@@ -932,7 +1001,8 @@
         label2d.position.set(px, py + sy/2 + 0.12, pz); boxGroup.add(label2d);
 
         const objIdx = objectMeshes.length;
-        objectMeshes.push({ meshes: [lines, fill, label2d], lineMat, visible: true, dot: null });
+        objectMeshes.push({ meshes: [lines, fill, label2d], lineMat, visible: true, dot: null,
+                            highlightPoints: null, px, py, pz, sx, sy, sz, quat, colorHex: hex });
 
         const row = document.createElement("div");
         row.className = "result-item";
@@ -961,6 +1031,144 @@
       setStatus(`${interactions.length} object${interactions.length!==1?"s":""} · ${groups.length} cameras`);
       dlJsonBtn.disabled = false;
       dlFramesBtn.disabled = !jobId;
+
+      // If already in splat mode and we have splat data, rebuild highlights for new detections
+      if (displayMode === "splat" && splatPositions) buildAllHighlights();
+    }
+
+    // ── PLY parser — extracts world-space splat positions ─────────────────────
+    function parsePlyWorldPositions(buffer) {
+      try {
+        const bytes = new Uint8Array(buffer);
+        const peek  = new TextDecoder("utf-8", { fatal: false })
+          .decode(bytes.slice(0, Math.min(8192, bytes.length)));
+        const hEnd = peek.indexOf("end_header");
+        if (hEnd < 0) return null;
+        let dataStart = hEnd + 10;
+        while (dataStart < bytes.length && (bytes[dataStart] === 10 || bytes[dataStart] === 13)) dataStart++;
+
+        const header = peek.slice(0, hEnd);
+        let numVerts = 0, inVert = false, format = "", props = [];
+        for (const raw of header.split(/\r?\n/)) {
+          const t = raw.trim();
+          if (t.startsWith("format "))           { format = t.split(/\s+/)[1]; }
+          else if (t.startsWith("element vertex ")) { numVerts = parseInt(t.split(/\s+/)[2], 10); inVert = true; props = []; }
+          else if (t.startsWith("element ") && !t.startsWith("element vertex ")) { inVert = false; }
+          else if (t.startsWith("property ") && inVert) {
+            const p = t.split(/\s+/);
+            const sz = { float:4, float32:4, double:8, float64:8, int:4, uint:4, int32:4, uint32:4, short:2, ushort:2, uchar:1, uint8:1, char:1, int8:1 }[p[1]] ?? 4;
+            props.push({ name: p[2], sz });
+          }
+        }
+        if (!numVerts || !format.startsWith("binary")) return null;
+
+        let stride = 0;
+        const off = {};
+        for (const p of props) { off[p.name] = stride; stride += p.sz; }
+        if (off.x === undefined || off.y === undefined || off.z === undefined) return null;
+
+        const le  = format !== "binary_big_endian";
+        const dv  = new DataView(buffer, dataStart);
+        const pos = new Float32Array(numVerts * 3);
+        for (let i = 0; i < numVerts; i++) {
+          const b = i * stride;
+          // Apply rotation.x = Math.PI that SplatMesh uses: world_y = -ply_y, world_z = -ply_z
+          pos[i * 3]     =  dv.getFloat32(b + off.x, le);
+          pos[i * 3 + 1] = -dv.getFloat32(b + off.y, le);
+          pos[i * 3 + 2] = -dv.getFloat32(b + off.z, le);
+        }
+        return pos;
+      } catch (err) {
+        console.warn("PLY parse failed:", err);
+        return null;
+      }
+    }
+
+    // ── Build ONE object's highlight point cloud ───────────────────────────────
+    const _v = new THREE.Vector3(); // reused to avoid GC
+    function buildObjectHighlight(entry) {
+      if (!splatPositions) return null;
+      const { px, py, pz, sx, sy, sz, quat, colorHex } = entry;
+      const invQ = quat.clone().invert();
+      const hx = sx / 2, hy = sy / 2, hz = sz / 2;
+      // Generous spherical early-reject: 2× half-diagonal squared
+      const earlySq = (hx*hx + hy*hy + hz*hz) * 4;
+      const tmp = [];
+      const n   = splatPositions.length / 3;
+      for (let i = 0; i < n; i++) {
+        const wx = splatPositions[i * 3], wy = splatPositions[i * 3 + 1], wz = splatPositions[i * 3 + 2];
+        const dx = wx - px, dy = wy - py, dz = wz - pz;
+        if (dx*dx + dy*dy + dz*dz > earlySq) continue;
+        _v.set(dx, dy, dz).applyQuaternion(invQ);
+        if (Math.abs(_v.x) <= hx && Math.abs(_v.y) <= hy && Math.abs(_v.z) <= hz) {
+          tmp.push(wx, wy, wz);
+        }
+      }
+      if (!tmp.length) return null;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(tmp), 3));
+      const mat = new THREE.PointsMaterial({
+        color: new THREE.Color(colorHex),
+        size: splatPointSize,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: splatIntensity,
+        depthWrite: false,
+      });
+      return new THREE.Points(geo, mat);
+    }
+
+    // ── Build highlights for all objects (lazy, skips already-built ones) ──────
+    function buildAllHighlights() {
+      if (!splatPositions) return;
+      objectMeshes.forEach(e => {
+        if (e.highlightPoints) return; // already built
+        e.highlightPoints = buildObjectHighlight(e);
+        if (e.highlightPoints) {
+          splatHighlightGroup.add(e.highlightPoints);
+          e.highlightPoints.visible = displayMode === "splat" && e.visible;
+        }
+      });
+    }
+
+    // ── Switch between bbox and splat highlight modes ─────────────────────────
+    function setSplatMode(mode) {
+      if (mode === "splat") {
+        // Parse positions if not yet done
+        if (!splatPositions && splatRawBytes) {
+          setStatus("Parsing splat positions…");
+          splatPositions = parsePlyWorldPositions(splatRawBytes);
+          if (!splatPositions) {
+            setStatus("Splat mode: could not parse .ply — only .ply binary files are supported");
+            return;
+          }
+        }
+        if (!splatPositions) {
+          setStatus("Splat mode requires a loaded .ply file — open one or load a Job ID first");
+          return;
+        }
+        displayMode = "splat";
+        buildAllHighlights();
+        objectMeshes.forEach(e => {
+          if (e.meshes[0]) e.meshes[0].visible = false; // lines
+          if (e.meshes[1]) e.meshes[1].visible = false; // fill
+          if (e.highlightPoints) e.highlightPoints.visible = e.visible;
+        });
+        setStatus(`Splat mode — ${splatPositions.length / 3} splats, ${objectMeshes.length} objects highlighted`);
+      } else {
+        displayMode = "bbox";
+        objectMeshes.forEach(e => {
+          if (e.meshes[0]) e.meshes[0].visible = e.visible;
+          if (e.meshes[1]) e.meshes[1].visible = e.visible;
+          if (e.highlightPoints) e.highlightPoints.visible = false;
+        });
+        setStatus("Bounding box mode");
+      }
+      document.getElementById("smode-bbox").classList.toggle("active", displayMode === "bbox");
+      document.getElementById("smode-splat").classList.toggle("active", displayMode === "splat");
+      document.getElementById("row-linewidth").style.display   = displayMode === "bbox"  ? "" : "none";
+      document.getElementById("row-intensity").style.display   = displayMode === "splat" ? "" : "none";
+      document.getElementById("row-pointsize").style.display   = displayMode === "splat" ? "" : "none";
     }
 
     // ── Load by Job ID ────────────────────────────────────────────────────────
@@ -1008,6 +1216,8 @@
             const sr = await fetch(`/api/v1/jobs/${jobId}/splat`, { headers: authHeaders() });
             if (!sr.ok) throw new Error(sr.status);
             const bytes = await sr.arrayBuffer();
+            splatRawBytes  = bytes;
+            splatPositions = null;
             if (currentSplat) { scene.remove(currentSplat); currentSplat = null; }
             showLoad("Loading splat…");
             currentSplat = new SplatMesh({
@@ -1027,6 +1237,8 @@
                   }
                 } catch (_) {}
                 setStatus(`Job ${jobId.slice(0,8)} — ${interactions.length} objects · ${groups.length} cameras · ${frameUrls.length} frames`);
+                // If already in splat mode, build highlights now that the splat is loaded
+                if (displayMode === "splat") setSplatMode("splat");
               },
             });
             scene.add(currentSplat);
