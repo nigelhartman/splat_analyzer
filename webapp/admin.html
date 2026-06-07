@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WorldModelData — Admin</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
+
+    header { display: flex; align-items: center; gap: 12px; padding: 0 24px; height: 54px; background: rgba(13,17,23,0.95); border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .logo { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: #58a6ff; text-decoration: none; }
+    .logo-tag { font-size: 11px; font-weight: 500; color: #6e7681; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 1px 7px; }
+    header nav { margin-left: auto; display: flex; gap: 2px; }
+    header nav a { padding: 5px 11px; border-radius: 6px; font-size: 13px; color: #8b949e; text-decoration: none; transition: background 0.15s, color 0.15s; }
+    header nav a:hover { background: rgba(255,255,255,0.06); color: #e6edf3; }
+    #logout-btn { padding: 5px 12px; border-radius: 6px; font-size: 12px; background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.2); color: #f85149; cursor: pointer; transition: background 0.15s; display: none; }
+    #logout-btn:hover { background: rgba(248,81,73,0.18); }
+    #logout-btn.show { display: block; }
+
+    main { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 40px 20px 60px; gap: 24px; }
+
+    /* ── Login card ── */
+    #login-section { width: 100%; max-width: 380px; }
+    .card { background: rgba(22,27,34,0.8); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden; }
+    .card-header { padding: 18px 22px 14px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .card-header h2 { font-size: 16px; font-weight: 600; }
+    .card-header p { font-size: 12px; color: #6e7681; margin-top: 3px; }
+    .card-body { padding: 20px 22px; }
+    .form-field { margin-bottom: 14px; }
+    .form-field label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 5px; }
+    .form-input { width: 100%; padding: 8px 11px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #e6edf3; font-size: 13px; outline: none; transition: border-color 0.15s; }
+    .form-input:focus { border-color: #388bfd; }
+    .form-input::placeholder { color: #3d444d; }
+    .btn-primary { width: 100%; padding: 9px; background: #238636; border: none; border-radius: 6px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+    .btn-primary:hover { background: #2ea043; }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .error-msg { margin-top: 10px; padding: 8px 10px; background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.2); border-radius: 5px; font-size: 12px; color: #f85149; display: none; }
+    .error-msg.show { display: block; }
+
+    /* ── Dashboard ── */
+    #dashboard-section { display: none; width: 100%; max-width: 780px; gap: 20px; flex-direction: column; }
+    #dashboard-section.show { display: flex; }
+
+    /* ── Create key ── */
+    .create-row { display: flex; gap: 8px; }
+    .create-row input { flex: 1; padding: 8px 11px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #e6edf3; font-size: 13px; outline: none; transition: border-color 0.15s; }
+    .create-row input:focus { border-color: #388bfd; }
+    .create-row input::placeholder { color: #3d444d; }
+    .btn-create { padding: 8px 16px; background: #238636; border: none; border-radius: 6px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background 0.15s; }
+    .btn-create:hover { background: #2ea043; }
+
+    /* ── New key reveal ── */
+    #new-key-box { display: none; margin-top: 12px; padding: 14px 16px; background: rgba(56,139,253,0.06); border: 1px solid rgba(56,139,253,0.25); border-radius: 8px; }
+    #new-key-box.show { display: block; }
+    .new-key-warn { font-size: 12px; color: #fde047; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .new-key-value { display: flex; align-items: center; gap: 8px; }
+    .new-key-text { flex: 1; padding: 7px 10px; background: rgba(13,17,23,0.7); border: 1px solid rgba(255,255,255,0.1); border-radius: 5px; font-family: "SF Mono","Fira Code",monospace; font-size: 12px; color: #58a6ff; word-break: break-all; }
+    .btn-copy { padding: 6px 12px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 5px; color: #e6edf3; font-size: 12px; cursor: pointer; white-space: nowrap; transition: background 0.15s; }
+    .btn-copy:hover { background: rgba(255,255,255,0.12); }
+
+    /* ── Keys table ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th { padding: 10px 14px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: #6e7681; border-bottom: 1px solid rgba(255,255,255,0.07); font-weight: 500; }
+    tbody tr { border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,0.02); }
+    tbody td { padding: 10px 14px; vertical-align: middle; }
+    .key-preview { font-family: "SF Mono","Fira Code",monospace; font-size: 11px; color: #8b949e; }
+    .badge-active { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: rgba(63,185,80,0.12); border: 1px solid rgba(63,185,80,0.3); color: #3fb950; }
+    .badge-revoked { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.2); color: #f85149; }
+    .ts { font-size: 11px; color: #6e7681; font-family: "SF Mono","Fira Code",monospace; }
+    .btn-revoke { padding: 4px 10px; background: transparent; border: 1px solid rgba(248,81,73,0.3); border-radius: 5px; color: #f85149; font-size: 11px; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+    .btn-revoke:hover { background: rgba(248,81,73,0.1); border-color: #f85149; }
+    .btn-revoke:disabled { opacity: 0.3; cursor: not-allowed; }
+    .empty-state { padding: 32px; text-align: center; color: #6e7681; font-size: 13px; }
+
+    /* ── Spinner ── */
+    .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.08); border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.75s linear infinite; display: inline-block; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <a href="/" class="logo">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+      <line x1="12" y1="22" x2="12" y2="15.5"/>
+      <polyline points="22 8.5 12 15.5 2 8.5"/>
+    </svg>
+    WorldModelData
+  </a>
+  <span class="logo-tag">Admin</span>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/docs">API Docs</a>
+  </nav>
+  <button id="logout-btn">Logout</button>
+</header>
+
+<main>
+  <!-- Login -->
+  <div id="login-section">
+    <div class="card">
+      <div class="card-header">
+        <h2>Admin Login</h2>
+        <p>Manage API keys for your WorldModelData instance.</p>
+      </div>
+      <div class="card-body">
+        <form id="login-form">
+          <div class="form-field">
+            <label for="username">Username</label>
+            <input class="form-input" type="text" id="username" placeholder="admin" autocomplete="username">
+          </div>
+          <div class="form-field">
+            <label for="password">Password</label>
+            <input class="form-input" type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+          </div>
+          <button class="btn-primary" type="submit" id="login-btn">Sign in</button>
+          <div class="error-msg" id="login-error"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard-section">
+
+    <!-- Create key card -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Create API Key</h2>
+        <p>Keys are prefixed <code style="font-size:11px;color:#58a6ff;">wmd_</code> and are shown only once on creation.</p>
+      </div>
+      <div class="card-body">
+        <div class="create-row">
+          <input type="text" id="new-key-label" placeholder="Label (e.g. Student 1, Workshop A)" maxlength="80">
+          <button class="btn-create" id="create-key-btn">Create Key</button>
+        </div>
+        <div id="new-key-box">
+          <div class="new-key-warn">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0114.082 15H1.918a1.75 1.75 0 01-1.543-2.575zM8 5a.75.75 0 01.75.75v2.5a.75.75 0 01-1.5 0v-2.5A.75.75 0 018 5zm1 6a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
+            Copy this key now — it cannot be retrieved after you close this box.
+          </div>
+          <div class="new-key-value">
+            <span class="new-key-text" id="new-key-text"></span>
+            <button class="btn-copy" id="copy-key-btn">Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Keys table card -->
+    <div class="card">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <h2>API Keys</h2>
+          <p>All keys for this instance.</p>
+        </div>
+        <button class="btn-copy" id="refresh-btn" style="font-size:11px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Refresh
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Label</th>
+              <th>Key preview</th>
+              <th>Created</th>
+              <th>Last used</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="keys-tbody">
+            <tr><td colspan="7" class="empty-state"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /dashboard -->
+</main>
+
+<script>
+  const loginSection    = document.getElementById("login-section");
+  const dashSection     = document.getElementById("dashboard-section");
+  const loginForm       = document.getElementById("login-form");
+  const usernameInput   = document.getElementById("username");
+  const passwordInput   = document.getElementById("password");
+  const loginBtn        = document.getElementById("login-btn");
+  const loginError      = document.getElementById("login-error");
+  const logoutBtn       = document.getElementById("logout-btn");
+  const createKeyBtn    = document.getElementById("create-key-btn");
+  const newKeyLabel     = document.getElementById("new-key-label");
+  const newKeyBox       = document.getElementById("new-key-box");
+  const newKeyText      = document.getElementById("new-key-text");
+  const copyKeyBtn      = document.getElementById("copy-key-btn");
+  const keysTbody       = document.getElementById("keys-tbody");
+  const refreshBtn      = document.getElementById("refresh-btn");
+
+  function getToken() { return sessionStorage.getItem("admin_token") || ""; }
+  function authHdr()  { return { "Content-Type": "application/json", "Authorization": "Bearer " + getToken() }; }
+
+  function showError(el, msg) { el.textContent = msg; el.classList.add("show"); }
+  function hideError(el)      { el.classList.remove("show"); }
+
+  function showDashboard() {
+    loginSection.style.display = "none";
+    dashSection.classList.add("show");
+    logoutBtn.classList.add("show");
+  }
+  function showLogin() {
+    loginSection.style.display = "";
+    dashSection.classList.remove("show");
+    logoutBtn.classList.remove("show");
+    newKeyBox.classList.remove("show");
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  if (getToken()) {
+    showDashboard();
+    loadKeys();
+  }
+
+  // ── Login ─────────────────────────────────────────────────────────────────
+  loginForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    hideError(loginError);
+    loginBtn.disabled = true; loginBtn.textContent = "Signing in…";
+    try {
+      const res = await fetch("/api/v1/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: usernameInput.value, password: passwordInput.value }),
+      });
+      if (!res.ok) { showError(loginError, "Invalid username or password."); return; }
+      const { token } = await res.json();
+      sessionStorage.setItem("admin_token", token);
+      showDashboard();
+      loadKeys();
+    } catch (err) {
+      showError(loginError, "Connection error: " + err.message);
+    } finally {
+      loginBtn.disabled = false; loginBtn.textContent = "Sign in";
+    }
+  });
+
+  logoutBtn.addEventListener("click", () => {
+    sessionStorage.removeItem("admin_token");
+    showLogin();
+  });
+
+  // ── Load keys ─────────────────────────────────────────────────────────────
+  async function loadKeys() {
+    keysTbody.innerHTML = '<tr><td colspan="7" class="empty-state"><span class="spinner"></span></td></tr>';
+    try {
+      const res = await fetch("/api/v1/admin/keys", { headers: authHdr() });
+      if (res.status === 401) { sessionStorage.removeItem("admin_token"); showLogin(); return; }
+      const keys = await res.json();
+      renderKeys(keys);
+    } catch (err) {
+      keysTbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color:#f85149;">Load failed: ${err.message}</td></tr>`;
+    }
+  }
+
+  function renderKeys(keys) {
+    if (!keys.length) {
+      keysTbody.innerHTML = '<tr><td colspan="7" class="empty-state">No API keys yet — create one above.</td></tr>';
+      return;
+    }
+    keysTbody.innerHTML = "";
+    keys.forEach((k) => {
+      const tr = document.createElement("tr");
+      const preview = k.key.slice(0, 16) + "…";
+      const created = k.created_at ? k.created_at.replace("T", " ").replace("Z", "") : "—";
+      const lastUsed = k.last_used  ? k.last_used.replace("T", " ").replace("Z", "") : "Never";
+      tr.innerHTML = `
+        <td style="color:#6e7681;font-size:12px;">${k.id}</td>
+        <td style="font-weight:500;">${escHtml(k.label || "—")}</td>
+        <td class="key-preview">${escHtml(preview)}</td>
+        <td class="ts">${created}</td>
+        <td class="ts">${lastUsed}</td>
+        <td>${k.active ? '<span class="badge-active">Active</span>' : '<span class="badge-revoked">Revoked</span>'}</td>
+        <td>${k.active ? `<button class="btn-revoke" data-id="${k.id}">Revoke</button>` : ""}</td>`;
+      keysTbody.appendChild(tr);
+    });
+    keysTbody.querySelectorAll(".btn-revoke").forEach(btn => {
+      btn.addEventListener("click", () => revokeKey(parseInt(btn.dataset.id), btn));
+    });
+  }
+
+  // ── Create key ────────────────────────────────────────────────────────────
+  createKeyBtn.addEventListener("click", async () => {
+    const label = newKeyLabel.value.trim();
+    createKeyBtn.disabled = true; createKeyBtn.textContent = "Creating…";
+    newKeyBox.classList.remove("show");
+    try {
+      const res = await fetch("/api/v1/admin/keys", {
+        method: "POST",
+        headers: authHdr(),
+        body: JSON.stringify({ label }),
+      });
+      if (res.status === 401) { sessionStorage.removeItem("admin_token"); showLogin(); return; }
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      newKeyText.textContent = data.key;
+      newKeyBox.classList.add("show");
+      newKeyLabel.value = "";
+      loadKeys();
+    } catch (err) {
+      alert("Failed to create key: " + err.message);
+    } finally {
+      createKeyBtn.disabled = false; createKeyBtn.textContent = "Create Key";
+    }
+  });
+
+  copyKeyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(newKeyText.textContent).then(() => {
+      copyKeyBtn.textContent = "Copied!";
+      setTimeout(() => { copyKeyBtn.textContent = "Copy"; }, 2000);
+    });
+  });
+
+  // ── Revoke ────────────────────────────────────────────────────────────────
+  async function revokeKey(id, btn) {
+    if (!confirm(`Revoke key #${id}? Apps using this key will stop working immediately.`)) return;
+    btn.disabled = true; btn.textContent = "Revoking…";
+    try {
+      const res = await fetch(`/api/v1/admin/keys/${id}`, { method: "DELETE", headers: authHdr() });
+      if (res.status === 401) { sessionStorage.removeItem("admin_token"); showLogin(); return; }
+      loadKeys();
+    } catch (err) {
+      btn.disabled = false; btn.textContent = "Revoke";
+      alert("Failed: " + err.message);
+    }
+  }
+
+  refreshBtn.addEventListener("click", loadKeys);
+
+  function escHtml(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+</script>
+</body>
+</html>

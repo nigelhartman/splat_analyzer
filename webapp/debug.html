@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Splat Analyzer — Debug</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    #viewport { position: fixed; inset: 0; cursor: crosshair; }
+    #viewport canvas { display: block; }
+    #viewport.dragging { cursor: grabbing; }
+
+    #topbar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 14px;
+      background: rgba(13,17,23,0.88); backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .logo {
+      font-size: 15px; font-weight: 700; color: #58a6ff; letter-spacing: -0.4px;
+      white-space: nowrap; display: flex; align-items: center; gap: 7px;
+    }
+    .logo a { color: inherit; text-decoration: none; font-size: 11px; opacity: 0.6; margin-left: 4px; }
+    .logo a:hover { opacity: 1; }
+    .sep { width: 1px; height: 22px; background: rgba(255,255,255,0.1); flex-shrink: 0; }
+
+    #file-label {
+      display: flex; align-items: center; gap: 7px; padding: 5px 13px;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s; user-select: none;
+    }
+    #file-label:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+
+    #filename { font-size: 12px; color: #8b949e; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+
+    #prompt {
+      flex: 1; min-width: 0; padding: 6px 11px;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px; color: #e6edf3; font-size: 13px; outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    #prompt:focus { border-color: #388bfd; background: rgba(56,139,253,0.06); }
+    #prompt::placeholder { color: #3d444d; }
+
+    #analyze-btn {
+      padding: 6px 18px; background: #238636; border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px; color: #fff; font-size: 13px; font-weight: 600;
+      cursor: pointer; white-space: nowrap; transition: background 0.15s; flex-shrink: 0;
+    }
+    #analyze-btn:hover:not(:disabled) { background: #2ea043; }
+    #analyze-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    #analyze-btn.loading { background: #1a3a26; }
+
+    #results {
+      position: fixed; right: 0; top: 52px; bottom: 0; width: 268px; z-index: 100;
+      background: rgba(13,17,23,0.88); border-left: 1px solid rgba(255,255,255,0.07);
+      backdrop-filter: blur(14px); transform: translateX(100%);
+      transition: transform 0.28s cubic-bezier(0.16,1,0.3,1);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    #results.open { transform: translateX(0); }
+
+    #results-tabs { display: flex; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+    .results-tab {
+      flex: 1; padding: 10px 0; font-size: 11px; text-align: center;
+      text-transform: uppercase; letter-spacing: 0.08em; color: #8b949e;
+      cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
+    }
+    .results-tab.active { color: #58a6ff; border-bottom-color: #388bfd; }
+
+    #results-header {
+      padding: 10px 16px 8px; font-size: 10px; text-transform: uppercase;
+      letter-spacing: 0.1em; color: #8b949e;
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+    }
+    .results-badge { background: rgba(255,255,255,0.08); padding: 2px 7px; border-radius: 10px; font-size: 11px; text-transform: none; letter-spacing: 0; color: #e6edf3; }
+
+    #tab-objects, #tab-frames, #tab-cameras { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+    #tab-objects.active, #tab-frames.active, #tab-cameras.active { display: flex; }
+    #results-list { overflow-y: auto; flex: 1; padding: 8px 0; }
+
+    #frames-controls { display: flex; gap: 6px; padding: 8px 12px 4px; flex-shrink: 0; }
+    .frames-toggle {
+      flex: 1; padding: 4px 8px; background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 5px; color: #8b949e;
+      font-size: 11px; cursor: pointer; text-align: center; transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .frames-toggle.active { background: rgba(56,139,253,0.15); border-color: #388bfd; color: #58a6ff; }
+
+    #frames-grid {
+      overflow-y: auto; flex: 1; padding: 8px;
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; align-content: start;
+    }
+    .frame-thumb {
+      aspect-ratio: 1; object-fit: cover; border-radius: 4px; cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.06); transition: border-color 0.15s, transform 0.1s;
+    }
+    .frame-thumb:hover { border-color: #388bfd; transform: scale(1.03); }
+
+    #cameras-list { overflow-y: auto; flex: 1; padding: 6px 0; }
+    .camera-item { padding: 10px 14px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.1s; }
+    .camera-item:hover { background: rgba(255,255,255,0.03); }
+    .camera-header { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+    .camera-icon { width: 26px; height: 26px; border-radius: 5px; background: rgba(56,139,253,0.15); border: 1px solid rgba(56,139,253,0.3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .camera-name { font-size: 13px; font-weight: 600; color: #e6edf3; flex: 1; }
+    .camera-pos { font-size: 10px; color: #6e7681; font-family: "SF Mono","Fira Code",monospace; margin-bottom: 7px; padding-left: 34px; line-height: 1.6; }
+    .camera-thumb-row { display: flex; gap: 6px; padding-left: 34px; align-items: flex-start; }
+    .camera-thumb { width: 62px; height: 62px; object-fit: cover; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); flex-shrink: 0; cursor: pointer; transition: border-color 0.15s; }
+    .camera-thumb:hover { border-color: #388bfd; }
+    .camera-btns { display: flex; flex-direction: column; gap: 4px; }
+    .cam-btn { padding: 4px 10px; font-size: 11px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: #e6edf3; cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s; }
+    .cam-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+    .cam-btn.teleport { color: #58a6ff; border-color: rgba(56,139,253,0.3); }
+    .cam-btn.teleport:hover { background: rgba(56,139,253,0.12); border-color: #388bfd; }
+    .cam-btn.depth-btn { color: #fde047; border-color: rgba(253,224,71,0.25); }
+    .cam-btn.depth-btn:hover { background: rgba(253,224,71,0.08); border-color: rgba(253,224,71,0.5); }
+
+    .result-item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; transition: background 0.1s; cursor: default; }
+    .result-item:hover { background: rgba(255,255,255,0.04); }
+    .result-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 6px currentColor; cursor: pointer; transition: opacity 0.2s, box-shadow 0.2s; }
+    .result-dot.off { opacity: 0.18; box-shadow: none !important; }
+    #toggle-all-btn { padding: 2px 8px; font-size: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #8b949e; cursor: pointer; transition: background 0.15s, color 0.15s; white-space: nowrap; }
+    #toggle-all-btn:hover { background: rgba(255,255,255,0.1); color: #e6edf3; }
+
+    .result-eye-btn { padding: 4px 6px; background: transparent; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.08); border-radius: 4px; color: #4a5568; cursor: pointer; transition: color 0.15s, border-color 0.15s, background 0.15s; }
+    .result-eye-btn:hover { color: #58a6ff; border-color: rgba(56,139,253,0.4); background: rgba(56,139,253,0.08); }
+
+    #settings-btn { display: flex; align-items: center; gap: 5px; padding: 5px 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10); border-radius: 6px; color: #8b949e; font-size: 12px; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: background 0.15s, color 0.15s; }
+    #settings-btn:hover, #settings-btn.open { background: rgba(255,255,255,0.1); color: #e6edf3; }
+
+    #settings-panel {
+      display: none; position: fixed; top: 52px; right: 0; width: 252px; z-index: 150;
+      background: rgba(13,17,23,0.97); border-left: 1px solid rgba(255,255,255,0.07);
+      border-bottom: 1px solid rgba(255,255,255,0.07); backdrop-filter: blur(14px); padding: 14px 16px;
+    }
+    #settings-panel.open { display: block; }
+    .settings-section { margin-bottom: 16px; }
+    .settings-section:last-child { margin-bottom: 0; }
+    .settings-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #6e7681; margin-bottom: 8px; }
+    .settings-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .settings-row label { font-size: 12px; color: #8b949e; flex: 1; }
+    .settings-row input[type=range] { flex: 1; accent-color: #388bfd; cursor: pointer; }
+    .settings-row span { font-size: 11px; color: #e6edf3; width: 28px; text-align: right; }
+    .settings-key-input {
+      width: 100%; padding: 5px 8px; background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 5px; color: #e6edf3;
+      font-size: 11px; outline: none; font-family: "SF Mono","Fira Code",monospace;
+      transition: border-color 0.15s;
+    }
+    .settings-key-input:focus { border-color: #388bfd; }
+    .settings-key-status { font-size: 10px; color: #6e7681; margin-top: 4px; }
+    .dl-btn { display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px 10px; margin-bottom: 6px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #e6edf3; font-size: 12px; cursor: pointer; transition: background 0.15s, border-color 0.15s; text-align: left; }
+    .dl-btn:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.2); }
+    .dl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .result-info { flex: 1; min-width: 0; }
+    .result-label { font-size: 13px; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .result-pos { font-size: 10px; color: #6e7681; font-family: "SF Mono","Fira Code",monospace; margin-top: 1px; }
+    .result-frames-btn { margin-top: 4px; padding: 2px 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: #8b949e; font-size: 10px; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s; }
+    .result-frames-btn:hover { background: rgba(56,139,253,0.12); color: #58a6ff; border-color: #388bfd; }
+
+    #lightbox { display: none; position: fixed; inset: 0; z-index: 400; background: rgba(0,0,0,0.88); align-items: center; justify-content: center; }
+    #lightbox.open { display: flex; }
+    #lightbox-content { position: relative; display: inline-block; max-width: 90vw; max-height: 90vh; }
+    #lightbox-img { display: block; max-width: 90vw; max-height: 90vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,0.7); }
+    #lightbox-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; border-radius: 6px; }
+    #lightbox-close { position: absolute; top: 16px; right: 20px; font-size: 28px; color: #fff; cursor: pointer; line-height: 1; opacity: 0.7; z-index: 1; }
+    #lightbox-close:hover { opacity: 1; }
+    #lightbox-nav { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; }
+    .lb-btn { padding: 6px 16px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; font-size: 13px; cursor: pointer; }
+    .lb-btn:hover { background: rgba(255,255,255,0.2); }
+
+    #status-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; padding: 7px 16px; background: rgba(13,17,23,0.92); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; font-size: 12px; color: #8b949e; backdrop-filter: blur(10px); pointer-events: none; white-space: nowrap; max-width: calc(100vw - 40px); overflow: hidden; text-overflow: ellipsis; transition: opacity 0.3s; }
+
+    #loading { position: fixed; inset: 0; z-index: 200; background: #0d1117; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; transition: opacity 0.4s; }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+    .spinner { width: 28px; height: 28px; border: 2px solid rgba(255,255,255,0.08); border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.75s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-msg { font-size: 13px; color: #8b949e; }
+
+    #drop-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(56,139,253,0.07); border: 2px dashed rgba(56,139,253,0.6); margin: 10px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 600; color: #58a6ff; pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+    #drop-overlay.visible { opacity: 1; }
+
+    .bbox-label { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: -apple-system, sans-serif; pointer-events: none; white-space: nowrap; letter-spacing: 0.03em; text-transform: capitalize; background: rgba(13,17,23,0.85); border: 1px solid; backdrop-filter: blur(4px); }
+
+    #progress-bar { position: fixed; top: 52px; left: 0; right: 0; height: 2px; z-index: 101; background: transparent; pointer-events: none; }
+    #progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#388bfd,#58a6ff); transition: width 0.4s ease; box-shadow: 0 0 8px #388bfd; }
+
+    #controls-hint { position: fixed; bottom: 20px; right: 16px; z-index: 100; padding: 6px 12px; background: rgba(13,17,23,0.75); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; font-size: 10px; color: #4a5568; pointer-events: none; line-height: 1.7; }
+    #controls-hint span { color: #8b949e; }
+  </style>
+</head>
+<body>
+
+  <div id="topbar">
+    <div class="logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+        <line x1="12" y1="22" x2="12" y2="15.5"/>
+        <polyline points="22 8.5 12 15.5 2 8.5"/>
+      </svg>
+      Splat Analyzer
+      <a href="/">← Home</a>
+    </div>
+    <div class="sep"></div>
+    <label id="file-label" for="file-input">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 018 4.25V1.5H3.75zm6.75.5v2.25c0 .138.112.25.25.25h2.25L10.5 2z"/>
+      </svg>
+      Open Splat
+    </label>
+    <input type="file" id="file-input" accept=".ply,.splat,.spz,.sogs,.ksplat" style="display:none">
+    <span id="filename">No file selected</span>
+    <div class="sep"></div>
+    <input id="prompt" type="text" placeholder="Objects to detect: sofa, TV, chair…" value="television, sofa, armchair, air conditioner">
+    <button id="analyze-btn" disabled>Analyze →</button>
+    <div class="sep"></div>
+    <button id="settings-btn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      Settings
+    </button>
+  </div>
+
+  <div id="settings-panel">
+    <div class="settings-section">
+      <div class="settings-label">API Key</div>
+      <input class="settings-key-input" type="password" id="api-key-input"
+             placeholder="wmd_…" autocomplete="off" spellcheck="false">
+      <div class="settings-key-status" id="api-key-status">No key set</div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">Display</div>
+      <div class="settings-row">
+        <label>Box line width</label>
+        <input type="range" id="line-width-slider" min="1" max="8" step="0.5" value="2">
+        <span id="line-width-val">2px</span>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">Downloads</div>
+      <button class="dl-btn" id="dl-json-btn" disabled>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Detections JSON
+      </button>
+      <button class="dl-btn" id="dl-frames-btn" disabled>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Raw Frames + Depth (zip)
+      </button>
+    </div>
+  </div>
+
+  <div id="progress-bar"><div id="progress-fill"></div></div>
+
+  <div id="results">
+    <div id="results-tabs">
+      <div class="results-tab active" data-tab="objects">Objects</div>
+      <div class="results-tab" data-tab="frames">Frames</div>
+      <div class="results-tab" data-tab="cameras">Cameras</div>
+    </div>
+    <div id="tab-objects" class="active">
+      <div id="results-header">
+        Detected Objects
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button id="toggle-all-btn">Hide All</button>
+          <span id="results-count" class="results-badge">0</span>
+        </div>
+      </div>
+      <div id="results-list"></div>
+    </div>
+    <div id="tab-frames">
+      <div id="results-header">Rendered Views <span id="frames-count" class="results-badge">0</span></div>
+      <div id="frames-controls">
+        <button class="frames-toggle active" id="toggle-rgb">RGB</button>
+        <button class="frames-toggle" id="toggle-depth">Depth</button>
+      </div>
+      <div id="frames-grid"></div>
+    </div>
+    <div id="tab-cameras">
+      <div id="results-header">Camera Positions <span id="cameras-count" class="results-badge">0</span></div>
+      <div id="cameras-list"></div>
+    </div>
+  </div>
+
+  <div id="lightbox">
+    <span id="lightbox-close">&times;</span>
+    <div id="lightbox-content">
+      <img id="lightbox-img" src="" alt="">
+      <canvas id="lightbox-canvas"></canvas>
+    </div>
+    <div id="lightbox-nav">
+      <button class="lb-btn" id="lb-prev">&#8592; Prev</button>
+      <span id="lb-index" style="color:#8b949e;font-size:12px;align-self:center;"></span>
+      <button class="lb-btn" id="lb-next">Next &#8594;</button>
+    </div>
+  </div>
+
+  <div id="status-bar">Drop a .ply file or click Open Splat</div>
+  <div id="controls-hint">
+    <span>WASD</span> move &nbsp;·&nbsp; <span>Q/E</span> up/down<br>
+    <span>Drag</span> look &nbsp;·&nbsp; <span>Scroll</span> zoom
+  </div>
+  <div id="drop-overlay">Drop your .ply here</div>
+  <div id="loading"><div class="spinner"></div><span id="loading-msg">Starting up…</span></div>
+  <div id="viewport"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.179.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.179.0/examples/jsm/",
+      "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.0.0/spark.module.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+    import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
+    import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
+    import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+    import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
+
+    // ── Auth ──────────────────────────────────────────────────────────────────
+    function getApiKey() { return localStorage.getItem("wmd_api_key") || ""; }
+    function authHeaders() { return { "X-API-Key": getApiKey() }; }
+    function imgUrl(path) {
+      const k = getApiKey();
+      return k ? path + "?key=" + encodeURIComponent(k) : path;
+    }
+
+    // Check if we were launched from root page with a job pre-loaded
+    const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+    const preloadJobId  = hashParams.get("job");
+    const preloadApiKey = hashParams.get("key");
+    if (preloadApiKey) {
+      localStorage.setItem("wmd_api_key", preloadApiKey);
+      location.hash = "";
+    }
+
+    // ── API key settings ──────────────────────────────────────────────────────
+    const apiKeyInput  = document.getElementById("api-key-input");
+    const apiKeyStatus = document.getElementById("api-key-status");
+    apiKeyInput.value  = getApiKey();
+    updateApiKeyStatus();
+
+    apiKeyInput.addEventListener("input", () => {
+      localStorage.setItem("wmd_api_key", apiKeyInput.value.trim());
+      updateApiKeyStatus();
+    });
+    function updateApiKeyStatus() {
+      const k = getApiKey();
+      if (k) { apiKeyStatus.textContent = "Set: " + k.slice(0,12) + "…"; apiKeyStatus.style.color = "#3fb950"; }
+      else    { apiKeyStatus.textContent = "No key — analysis will fail"; apiKeyStatus.style.color = "#f85149"; }
+    }
+
+    // ── Colour map ────────────────────────────────────────────────────────────
+    const COLOURS = {
+      television:"#00e5ff",tv:"#00e5ff",monitor:"#00e5ff",screen:"#00e5ff",
+      sofa:"#00ff88",couch:"#00ff88",
+      armchair:"#ffaa00",chair:"#ffaa00",
+      desk:"#ff69b4",table:"#ff69b4",
+      "air conditioner":"#4488ff",ac:"#4488ff",
+      bed:"#c084fc",cabinet:"#e879f9",wardrobe:"#e879f9",
+      lamp:"#fde047",light:"#fde047",
+      refrigerator:"#67e8f9",fridge:"#67e8f9",
+    };
+    function labelColour(label) {
+      const l = label.toLowerCase();
+      for (const [k, v] of Object.entries(COLOURS)) if (l.includes(k)) return v;
+      return "#ffffff";
+    }
+
+    // ── Three.js setup ────────────────────────────────────────────────────────
+    const viewport = document.getElementById("viewport");
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    viewport.appendChild(renderer.domElement);
+
+    const labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(window.innerWidth, window.innerHeight);
+    labelRenderer.domElement.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:50;";
+    document.body.appendChild(labelRenderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0d1117);
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 2000);
+    camera.position.set(0, 2, 10);
+    camera.lookAt(0, 0, 0);
+
+    const spark = new SparkRenderer({ renderer });
+    scene.add(spark);
+    const boxGroup = new THREE.Group();
+    scene.add(boxGroup);
+
+    // ── FPS Camera ────────────────────────────────────────────────────────────
+    const camEuler = new THREE.Euler(0, 0, 0, "YXZ");
+    camEuler.setFromQuaternion(camera.quaternion, "YXZ");
+    const moveKeys = { w:false, a:false, s:false, d:false, q:false, e:false };
+    let isDragging = false, lastMX = 0, lastMY = 0, moveSpeed = 0.08;
+    const LOOK_SENSITIVITY = 0.003;
+
+    viewport.addEventListener("mousedown", (e) => {
+      if (e.button === 0) { isDragging = true; flyTo = null; lastMX = e.clientX; lastMY = e.clientY; viewport.classList.add("dragging"); }
+    });
+    document.addEventListener("mousemove", (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
+      lastMX = e.clientX; lastMY = e.clientY;
+      camEuler.setFromQuaternion(camera.quaternion, "YXZ");
+      camEuler.y -= dx * LOOK_SENSITIVITY;
+      camEuler.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camEuler.x - dy * LOOK_SENSITIVITY));
+      camera.quaternion.setFromEuler(camEuler);
+    });
+    document.addEventListener("mouseup", () => { isDragging = false; viewport.classList.remove("dragging"); });
+    viewport.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const fwd = new THREE.Vector3();
+      camera.getWorldDirection(fwd);
+      camera.position.addScaledVector(fwd, -e.deltaY * moveSpeed * 0.1);
+    }, { passive: false });
+    document.addEventListener("keydown", (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+      const k = e.key.toLowerCase();
+      if (k in moveKeys) { moveKeys[k] = true; flyTo = null; e.preventDefault(); }
+    });
+    document.addEventListener("keyup", (e) => { const k = e.key.toLowerCase(); if (k in moveKeys) moveKeys[k] = false; });
+
+    function updateFPSCamera() {
+      if (flyTo) {
+        flyTo.t = Math.min(1, flyTo.t + 0.035);
+        const ease = 1 - Math.pow(1 - flyTo.t, 3);
+        camera.position.lerpVectors(flyTo.startPos, flyTo.endPos, ease);
+        camera.quaternion.slerpQuaternions(flyTo.startQuat, flyTo.endQuat, ease);
+        camEuler.setFromQuaternion(camera.quaternion, "YXZ");
+        if (flyTo.t >= 1) flyTo = null;
+        return;
+      }
+      if (!Object.values(moveKeys).some(Boolean)) return;
+      const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
+      const right = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
+      if (moveKeys.w) camera.position.addScaledVector(fwd,    moveSpeed);
+      if (moveKeys.s) camera.position.addScaledVector(fwd,   -moveSpeed);
+      if (moveKeys.a) camera.position.addScaledVector(right, -moveSpeed);
+      if (moveKeys.d) camera.position.addScaledVector(right,  moveSpeed);
+      if (moveKeys.e) camera.position.y += moveSpeed;
+      if (moveKeys.q) camera.position.y -= moveSpeed;
+    }
+
+    renderer.setAnimationLoop(() => { updateFPSCamera(); renderer.render(scene, camera); labelRenderer.render(scene, camera); });
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      labelRenderer.setSize(window.innerWidth, window.innerHeight);
+      objectMeshes.forEach(e => { if (e.lineMat) e.lineMat.resolution.set(window.innerWidth, window.innerHeight); });
+    });
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    let currentSplat = null, loadedFile = null, analysing = false;
+    let currentJobId = null, currentRgbUrls = [], currentDepthUrls = [];
+    let showingDepth = false, lightboxIdx = 0, lightboxUrls = [], lightboxAnnotMap = null;
+    let cameraGroupsData = [], frameAnnotationsData = {}, objectMeshes = [];
+    let currentLineWidth = 2, currentDetections = [], flyTo = null;
+
+    // ── UI refs ───────────────────────────────────────────────────────────────
+    const fileInput = document.getElementById("file-input");
+    const promptInput = document.getElementById("prompt");
+    const analyzeBtn = document.getElementById("analyze-btn");
+    const statusBar = document.getElementById("status-bar");
+    const resultsPanel = document.getElementById("results");
+    const resultsList = document.getElementById("results-list");
+    const resultsCount = document.getElementById("results-count");
+    const framesGrid = document.getElementById("frames-grid");
+    const framesCount = document.getElementById("frames-count");
+    const camerasList = document.getElementById("cameras-list");
+    const camerasCount = document.getElementById("cameras-count");
+    const filenameEl = document.getElementById("filename");
+    const loadingEl = document.getElementById("loading");
+    const loadingMsg = document.getElementById("loading-msg");
+    const dropOverlay = document.getElementById("drop-overlay");
+    const progressFill = document.getElementById("progress-fill");
+    const lightbox = document.getElementById("lightbox");
+    const lightboxImg = document.getElementById("lightbox-img");
+    const lightboxCanvas = document.getElementById("lightbox-canvas");
+    const lbIndex = document.getElementById("lb-index");
+    const toggleRgb = document.getElementById("toggle-rgb");
+    const toggleDepth = document.getElementById("toggle-depth");
+    const toggleAllBtn = document.getElementById("toggle-all-btn");
+
+    // ── Visibility toggles ────────────────────────────────────────────────────
+    function setObjectVisible(idx, visible) {
+      const e = objectMeshes[idx]; if (!e) return;
+      e.visible = visible; e.meshes.forEach(m => { m.visible = visible; });
+      e.dot.classList.toggle("off", !visible);
+    }
+    function toggleObject(idx) { if (objectMeshes[idx]) setObjectVisible(idx, !objectMeshes[idx].visible); updateToggleAllBtn(); }
+    function updateToggleAllBtn() { toggleAllBtn.textContent = objectMeshes.every(e => e.visible) ? "Hide All" : "Show All"; }
+    toggleAllBtn.addEventListener("click", () => {
+      const allVisible = objectMeshes.every(e => e.visible);
+      objectMeshes.forEach((_, i) => setObjectVisible(i, !allVisible));
+      toggleAllBtn.textContent = allVisible ? "Show All" : "Hide All";
+    });
+
+    // ── Settings panel ────────────────────────────────────────────────────────
+    const settingsBtn = document.getElementById("settings-btn");
+    const settingsPanel = document.getElementById("settings-panel");
+    const lineWidthSlider = document.getElementById("line-width-slider");
+    const lineWidthVal = document.getElementById("line-width-val");
+    const dlJsonBtn = document.getElementById("dl-json-btn");
+    const dlFramesBtn = document.getElementById("dl-frames-btn");
+
+    settingsBtn.addEventListener("click", (e) => { e.stopPropagation(); settingsPanel.classList.toggle("open"); settingsBtn.classList.toggle("open", settingsPanel.classList.contains("open")); });
+    document.addEventListener("click", (e) => { if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) { settingsPanel.classList.remove("open"); settingsBtn.classList.remove("open"); } });
+    lineWidthSlider.addEventListener("input", () => {
+      currentLineWidth = parseFloat(lineWidthSlider.value);
+      lineWidthVal.textContent = currentLineWidth + "px";
+      objectMeshes.forEach(e => { if (e.lineMat) e.lineMat.linewidth = currentLineWidth; });
+    });
+    dlJsonBtn.addEventListener("click", () => {
+      if (!currentDetections.length) return;
+      const blob = new Blob([JSON.stringify({ job_id: currentJobId, objects: currentDetections }, null, 2)], { type: "application/json" });
+      const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "detections.json" });
+      a.click(); URL.revokeObjectURL(a.href);
+    });
+    dlFramesBtn.addEventListener("click", () => {
+      if (!currentJobId) return;
+      fetch(`/api/v1/jobs/${currentJobId}/download`, { headers: authHeaders() })
+        .then(r => r.blob())
+        .then(blob => {
+          const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `splat_${currentJobId.slice(0,8)}.zip` });
+          a.click(); URL.revokeObjectURL(a.href);
+        });
+    });
+
+    // ── Fly-to object ─────────────────────────────────────────────────────────
+    function flyToObject(px, py, pz, sx, sy, sz) {
+      const center   = new THREE.Vector3(px, py, pz);
+      const viewDist = Math.max(sx, sy, sz) * 2.8 + 1.5;
+      const toObj    = center.clone().sub(camera.position);
+      const dir      = toObj.length() > 0.01 ? toObj.normalize() : new THREE.Vector3(0, 0, -1);
+      const endPos   = center.clone().sub(dir.clone().multiplyScalar(viewDist));
+      const m        = new THREE.Matrix4().lookAt(endPos, center, new THREE.Vector3(0, 1, 0));
+      flyTo = { startPos: camera.position.clone(), endPos, startQuat: camera.quaternion.clone(), endQuat: new THREE.Quaternion().setFromRotationMatrix(m), t: 0 };
+    }
+
+    // ── Tab switching ─────────────────────────────────────────────────────────
+    document.querySelectorAll(".results-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".results-tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll("#tab-objects,#tab-frames,#tab-cameras").forEach(p => p.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+      });
+    });
+
+    toggleRgb.addEventListener("click", () => { showingDepth = false; toggleRgb.classList.add("active"); toggleDepth.classList.remove("active"); renderFramesGrid(currentRgbUrls); });
+    toggleDepth.addEventListener("click", () => {
+      if (!currentDepthUrls.length) return;
+      showingDepth = true; toggleDepth.classList.add("active"); toggleRgb.classList.remove("active"); renderFramesGrid(currentDepthUrls);
+    });
+
+    function renderFramesGrid(urls) {
+      framesGrid.innerHTML = "";
+      urls.forEach((url, i) => {
+        const img = document.createElement("img");
+        img.className = "frame-thumb"; img.src = imgUrl(url); img.loading = "lazy"; img.title = `Frame ${i+1}`;
+        img.addEventListener("click", () => { lightboxUrls = urls; openLightbox(i); });
+        framesGrid.appendChild(img);
+      });
+    }
+
+    // ── Lightbox box overlay ──────────────────────────────────────────────────
+    function drawLightboxBoxes() {
+      const ctx = lightboxCanvas.getContext("2d");
+      lightboxCanvas.width = 512; lightboxCanvas.height = 512;
+      ctx.clearRect(0, 0, 512, 512);
+      if (!lightboxAnnotMap) return;
+      const annots = lightboxAnnotMap[lightboxUrls[lightboxIdx]];
+      if (!annots || !annots.length) return;
+      for (const det of annots) {
+        const [x1, y1, x2, y2] = det.box;
+        const color = labelColour(det.label);
+        ctx.strokeStyle = color; ctx.lineWidth = 2;
+        ctx.strokeRect(x1, y1, x2-x1, y2-y1);
+        const txt = `${det.label}  ${Math.round(det.score*100)}%`;
+        ctx.font = "bold 13px -apple-system, sans-serif";
+        const tw = ctx.measureText(txt).width, lh = 18;
+        const lx = x1, ly = Math.max(y1 - lh, 0);
+        ctx.fillStyle = "rgba(13,17,23,0.82)"; ctx.fillRect(lx, ly, tw+8, lh);
+        ctx.fillStyle = color; ctx.fillText(txt, lx+4, ly+lh-4);
+      }
+    }
+
+    function openLightbox(idx) {
+      lightboxIdx = ((idx % lightboxUrls.length) + lightboxUrls.length) % lightboxUrls.length;
+      lightboxImg.src = imgUrl(lightboxUrls[lightboxIdx]);
+      lbIndex.textContent = `${lightboxIdx+1} / ${lightboxUrls.length}`;
+      lightbox.classList.add("open");
+      lightboxImg.onload = drawLightboxBoxes;
+      if (lightboxImg.complete && lightboxImg.naturalWidth > 0) drawLightboxBoxes();
+    }
+    function openObjectFrames(obj) {
+      if (!obj.frames || !obj.frames.length) return;
+      lightboxUrls = obj.frames.map(f => `/api/v1/jobs/${currentJobId}/frames/frame_${String(f.frame_idx).padStart(4,"0")}.png`);
+      lightboxAnnotMap = {};
+      obj.frames.forEach((f, i) => {
+        lightboxAnnotMap[lightboxUrls[i]] = frameAnnotationsData[String(f.frame_idx)] || [];
+      });
+      openLightbox(0);
+    }
+    function closeLightbox() {
+      lightbox.classList.remove("open"); lightboxAnnotMap = null;
+      const ctx = lightboxCanvas.getContext("2d"); ctx.clearRect(0, 0, lightboxCanvas.width, lightboxCanvas.height);
+    }
+    document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
+    lightbox.addEventListener("click", (e) => { if (e.target === lightbox) closeLightbox(); });
+    document.getElementById("lb-prev").addEventListener("click", () => openLightbox(lightboxIdx-1));
+    document.getElementById("lb-next").addEventListener("click", () => openLightbox(lightboxIdx+1));
+    document.addEventListener("keydown", (e) => {
+      if (!lightbox.classList.contains("open")) return;
+      if (e.key === "ArrowLeft") openLightbox(lightboxIdx-1);
+      if (e.key === "ArrowRight") openLightbox(lightboxIdx+1);
+      if (e.key === "Escape") closeLightbox();
+    });
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    const setStatus   = (msg) => { statusBar.textContent = msg; };
+    const showLoad    = (msg) => { loadingMsg.textContent = msg; loadingEl.classList.remove("hidden"); };
+    const hideLoad    = ()    => { loadingEl.classList.add("hidden"); };
+    const setProgress = (pct) => { progressFill.style.width = pct + "%"; };
+    const sleep       = (ms)  => new Promise(r => setTimeout(r, ms));
+
+    function teleportToCamera(group) {
+      const [cx, cy, cz] = group.position;
+      camera.position.set(cx, -cy, -cz);
+      const m = group.first_transform;
+      camera.lookAt(cx + m[0][2], -cy - m[1][2], -cz - m[2][2]);
+      camEuler.setFromQuaternion(camera.quaternion, "YXZ");
+      setStatus(`Teleported to ${group.label} — drag to look, WASD to move`);
+    }
+
+    function clearBoxes() {
+      boxGroup.clear(); resultsList.innerHTML = ""; framesGrid.innerHTML = ""; camerasList.innerHTML = "";
+      resultsCount.textContent = "0"; framesCount.textContent = "0"; camerasCount.textContent = "0";
+      currentRgbUrls = []; currentDepthUrls = []; cameraGroupsData = [];
+      frameAnnotationsData = {}; objectMeshes = []; currentDetections = []; currentJobId = null;
+      toggleAllBtn.textContent = "Hide All"; dlJsonBtn.disabled = true; dlFramesBtn.disabled = true;
+      resultsPanel.classList.remove("open");
+    }
+
+    async function loadSplat(file) {
+      if (currentSplat) { scene.remove(currentSplat); currentSplat = null; }
+      clearBoxes();
+      showLoad(`Loading ${file.name}…`); setStatus(`Reading ${file.name}…`);
+      const bytes = await file.arrayBuffer();
+      currentSplat = new SplatMesh({
+        fileBytes: bytes, fileName: file.name,
+        onLoad: async (mesh) => {
+          mesh.rotation.x = Math.PI;
+          hideLoad();
+          const mb = (file.size/1048576).toFixed(1);
+          setStatus(`${file.name} — ${mb} MB  ·  Drag to look  ·  WASD to move  ·  Analyze to detect`);
+          try {
+            const box = new THREE.Box3().setFromObject(mesh);
+            if (!box.isEmpty()) {
+              const center = box.getCenter(new THREE.Vector3());
+              const size   = box.getSize(new THREE.Vector3());
+              const maxDim = Math.max(size.x, size.y, size.z);
+              moveSpeed = maxDim * 0.008;
+              camera.position.copy(center).addScaledVector(new THREE.Vector3(0.2, 0.3, 1).normalize(), maxDim*2);
+              camera.lookAt(center); camEuler.setFromQuaternion(camera.quaternion, "YXZ");
+            }
+          } catch (_) {}
+        },
+      });
+      scene.add(currentSplat);
+    }
+
+    function buildCamerasList(groups) {
+      camerasList.innerHTML = ""; camerasCount.textContent = String(groups.length);
+      if (!groups.length) return;
+      groups.forEach((group) => {
+        const [px, py, pz] = group.position;
+        const item = document.createElement("div");
+        item.className = "camera-item";
+        item.innerHTML = `
+          <div class="camera-header">
+            <div class="camera-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></div>
+            <span class="camera-name">${group.label}</span>
+          </div>
+          <div class="camera-pos">x: ${px.toFixed(3)}&nbsp;&nbsp;y: ${py.toFixed(3)}&nbsp;&nbsp;z: ${pz.toFixed(3)}</div>
+          <div class="camera-thumb-row">
+            <img class="camera-thumb" src="${imgUrl(group.first_frame_url)}" loading="lazy" title="First frame from ${group.label}">
+            <div class="camera-btns">
+              <button class="cam-btn teleport">Go here →</button>
+              <button class="cam-btn depth-btn">Depth</button>
+            </div>
+          </div>`;
+        item.querySelector(".teleport").addEventListener("click", (e) => { e.stopPropagation(); teleportToCamera(group); });
+        item.querySelector(".depth-btn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          lightboxUrls = group.frame_indices.map(i => `/api/v1/jobs/${currentJobId}/frames/depth_${String(i).padStart(4,"0")}.png`);
+          openLightbox(0);
+        });
+        item.querySelector(".camera-thumb").addEventListener("click", (e) => {
+          e.stopPropagation();
+          lightboxUrls = group.frame_indices.map(i => `/api/v1/jobs/${currentJobId}/frames/frame_${String(i).padStart(4,"0")}.png`);
+          openLightbox(0);
+        });
+        camerasList.appendChild(item);
+      });
+    }
+
+    function addBoxes(interactions, frameUrls, depthUrls, groups, frameAnnots) {
+      clearBoxes();
+      currentJobId = interactions._jobId;
+      currentDetections = interactions.filter(i => typeof i === "object" && i.label);
+      currentRgbUrls = frameUrls; currentDepthUrls = depthUrls;
+      cameraGroupsData = groups; frameAnnotationsData = frameAnnots || {};
+
+      if (frameUrls.length) {
+        framesCount.textContent = String(frameUrls.length);
+        toggleDepth.style.opacity = depthUrls.length ? "1" : "0.4";
+        toggleDepth.style.pointerEvents = depthUrls.length ? "auto" : "none";
+        showingDepth = false; toggleRgb.classList.add("active"); toggleDepth.classList.remove("active");
+        renderFramesGrid(frameUrls);
+      }
+      buildCamerasList(groups);
+
+      if (!interactions.length) {
+        setStatus("No objects found — try adjusting your prompt."); resultsPanel.classList.add("open"); return;
+      }
+
+      interactions.forEach((item) => {
+        const col = new THREE.Color(labelColour(item.label));
+        const hex = labelColour(item.label);
+        const px =  item.position.x, py = -item.position.y, pz = -item.position.z;
+        const { x:sx, y:sy, z:sz } = item.scale;
+        const { x:rx, y:ry, z:rz, w:rw } = item.rotation;
+        const quat = new THREE.Quaternion(rx, -ry, -rz, rw);
+
+        const edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(sx, sy, sz));
+        const lineGeo  = new LineSegmentsGeometry();
+        lineGeo.setPositions(edgesGeo.attributes.position.array);
+        const lineMat = new LineMaterial({ color: col, linewidth: currentLineWidth, resolution: new THREE.Vector2(window.innerWidth, window.innerHeight) });
+        const lines = new LineSegments2(lineGeo, lineMat);
+        lines.position.set(px, py, pz); lines.quaternion.copy(quat); boxGroup.add(lines);
+
+        const fill = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.06, side: THREE.DoubleSide, depthWrite: false }));
+        fill.position.set(px, py, pz); fill.quaternion.copy(quat); boxGroup.add(fill);
+
+        const div = document.createElement("div");
+        div.className = "bbox-label"; div.textContent = item.label; div.style.color = hex; div.style.borderColor = hex+"55";
+        const label2d = new CSS2DObject(div);
+        label2d.position.set(px, py + sy/2 + 0.12, pz); boxGroup.add(label2d);
+
+        const objIdx = objectMeshes.length;
+        objectMeshes.push({ meshes: [lines, fill, label2d], lineMat, visible: true, dot: null });
+
+        const row = document.createElement("div");
+        row.className = "result-item";
+        const frameCount = item.frames ? item.frames.length : 0;
+        row.innerHTML = `
+          <div class="result-dot" style="background:${hex};box-shadow:0 0 6px ${hex};" title="Toggle visibility"></div>
+          <div class="result-info">
+            <div class="result-label">${item.label}</div>
+            <div class="result-pos">${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)}</div>
+            ${frameCount ? `<button class="result-frames-btn">${frameCount} frames ›</button>` : ""}
+          </div>
+          <button class="result-eye-btn" title="Focus camera on this object">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>`;
+
+        const dot = row.querySelector(".result-dot");
+        objectMeshes[objIdx].dot = dot;
+        dot.addEventListener("click", (e) => { e.stopPropagation(); toggleObject(objIdx); });
+        row.querySelector(".result-eye-btn").addEventListener("click", (e) => { e.stopPropagation(); flyToObject(px, py, pz, sx, sy, sz); });
+        if (frameCount) row.querySelector(".result-frames-btn").addEventListener("click", (e) => { e.stopPropagation(); openObjectFrames(item); });
+        resultsList.appendChild(row);
+      });
+
+      resultsCount.textContent = String(interactions.length);
+      resultsPanel.classList.add("open");
+      setStatus(`Found ${interactions.length} object${interactions.length!==1?"s":""} — ${groups.length} camera positions`);
+      dlJsonBtn.disabled = false; dlFramesBtn.disabled = false;
+    }
+
+    // ── Analyse (async job flow) ───────────────────────────────────────────────
+    async function analyse() {
+      if (!loadedFile || analysing) return;
+      const apiKey = getApiKey();
+      if (!apiKey) {
+        setStatus("Enter your API key in Settings first.");
+        document.getElementById("settings-panel").classList.add("open");
+        document.getElementById("settings-btn").classList.add("open");
+        return;
+      }
+      analysing = true;
+      analyzeBtn.disabled = true; analyzeBtn.classList.add("loading"); analyzeBtn.textContent = "Analysing…";
+      clearBoxes(); setProgress(0);
+
+      let pct = 5;
+      const ticker = setInterval(() => { pct = Math.min(pct + (88 - pct) * 0.025, 88); setProgress(pct); }, 1200);
+
+      try {
+        // Step 1: Submit job
+        setStatus("Uploading file to server…");
+        const form = new FormData();
+        form.append("file",   loadedFile);
+        form.append("prompt", promptInput.value);
+        const t0  = Date.now();
+        const res = await fetch("/api/v1/detect", { method: "POST", headers: authHeaders(), body: form });
+        if (!res.ok) throw new Error(`Submit error ${res.status}: ${(await res.text()).slice(0,200)}`);
+        const { job_id } = await res.json();
+        setStatus("Job queued — rendering camera views…");
+
+        // Step 2: Poll status
+        while (true) {
+          await sleep(3500);
+          const sr = await fetch(`/api/v1/jobs/${job_id}/status`, { headers: authHeaders() });
+          if (!sr.ok) throw new Error("Status poll failed");
+          const { status } = await sr.json();
+          if (status === "done") break;
+          if (status === "failed") throw new Error("Detection pipeline failed on server.");
+          setStatus(status === "running" ? "Detecting objects (~2-3 min)…" : "Starting pipeline…");
+        }
+
+        clearInterval(ticker); setProgress(95);
+        setStatus("Loading results…");
+
+        // Step 3: Fetch debug result
+        const rr = await fetch(`/api/v1/jobs/${job_id}/result/debug`, { headers: authHeaders() });
+        if (!rr.ok) throw new Error(`Result fetch error ${rr.status}`);
+        const data = await rr.json();
+        const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+        setProgress(100);
+        setTimeout(() => setProgress(0), 800);
+
+        const interactions    = Array.isArray(data.objects) ? data.objects : [];
+        const frameUrls       = data.frames             ?? [];
+        const depthUrls       = data.depth_frames       ?? [];
+        const groups          = data.camera_groups      ?? [];
+        const frameAnnots     = data.frame_annotations  ?? {};
+        interactions._jobId   = job_id;
+        currentJobId          = job_id;
+
+        addBoxes(interactions, frameUrls, depthUrls, groups, frameAnnots);
+        setStatus(`Done in ${elapsed}s — ${interactions.length} object${interactions.length!==1?"s":""} · ${groups.length} cameras`);
+      } catch (err) {
+        clearInterval(ticker); setProgress(0);
+        setStatus(`Error: ${err.message}`); console.error(err);
+      } finally {
+        analysing = false; analyzeBtn.disabled = false; analyzeBtn.classList.remove("loading"); analyzeBtn.textContent = "Analyze →";
+      }
+    }
+
+    // ── File handling ─────────────────────────────────────────────────────────
+    async function handleFile(file) {
+      if (!file) return;
+      loadedFile = file; filenameEl.textContent = file.name; analyzeBtn.disabled = false;
+      await loadSplat(file);
+    }
+    fileInput.addEventListener("change", (e) => handleFile(e.target.files[0]));
+    analyzeBtn.addEventListener("click", analyse);
+    document.addEventListener("dragover",  (e) => { e.preventDefault(); dropOverlay.classList.add("visible"); });
+    document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) dropOverlay.classList.remove("visible"); });
+    document.addEventListener("drop", (e) => { e.preventDefault(); dropOverlay.classList.remove("visible"); const f = e.dataTransfer?.files[0]; if (f) handleFile(f); });
+
+    hideLoad();
+    setStatus("Drop a .ply file or click Open Splat");
+
+    // Auto-load job from hash (launched from root page)
+    if (preloadJobId && getApiKey()) {
+      setStatus(`Loading job ${preloadJobId.slice(0,8)}… (open a .ply to see the 3D view)`);
+    }
+  </script>
+</body>
+</html>

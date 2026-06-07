@@ -3,1366 +3,561 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Splat Analyzer</title>
+  <title>WorldModelData</title>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-
     body {
-      background: #0d1117;
-      color: #e6edf3;
+      background: #0d1117; color: #e6edf3;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      overflow: hidden;
-      height: 100vh;
-      width: 100vw;
+      min-height: 100vh; display: flex; flex-direction: column;
     }
 
-    /* ── Viewport ─────────────────────────────────────────────────────────── */
-    #viewport { position: fixed; inset: 0; cursor: crosshair; }
-    #viewport canvas { display: block; }
-    #viewport.dragging { cursor: grabbing; }
-
-    /* ── Top bar ──────────────────────────────────────────────────────────── */
-    #topbar {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      z-index: 100;
-      height: 52px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 0 14px;
-      background: rgba(13, 17, 23, 0.88);
-      backdrop-filter: blur(14px);
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 24px; height: 54px; flex-shrink: 0;
+      background: rgba(13,17,23,0.95);
       border-bottom: 1px solid rgba(255,255,255,0.07);
+      backdrop-filter: blur(12px);
+      position: sticky; top: 0; z-index: 50;
     }
-
     .logo {
-      font-size: 15px; font-weight: 700; color: #58a6ff;
-      letter-spacing: -0.4px; white-space: nowrap;
-      display: flex; align-items: center; gap: 7px;
+      display: flex; align-items: center; gap: 8px;
+      font-size: 15px; font-weight: 700; color: #58a6ff; letter-spacing: -0.3px;
+      text-decoration: none;
     }
-    .sep { width: 1px; height: 22px; background: rgba(255,255,255,0.1); flex-shrink: 0; }
-
-    #file-label {
-      display: flex; align-items: center; gap: 7px;
-      padding: 5px 13px;
+    .logo svg { flex-shrink: 0; }
+    header nav { display: flex; gap: 2px; margin-left: auto; }
+    header nav a {
+      padding: 5px 11px; border-radius: 6px; font-size: 13px;
+      color: #8b949e; text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+    }
+    header nav a:hover { background: rgba(255,255,255,0.06); color: #e6edf3; }
+    .header-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.08); }
+    #settings-btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 10px; border-radius: 6px; font-size: 12px;
       background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 6px; font-size: 13px; cursor: pointer;
-      white-space: nowrap; transition: background 0.15s, border-color 0.15s;
-      user-select: none;
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #8b949e; cursor: pointer;
+      transition: background 0.15s, color 0.15s;
     }
-    #file-label:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+    #settings-btn:hover, #settings-btn.open { background: rgba(255,255,255,0.1); color: #e6edf3; }
 
-    #filename {
-      font-size: 12px; color: #8b949e;
-      max-width: 140px; overflow: hidden;
-      text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
+    /* ── Settings flyout ── */
+    #settings-flyout {
+      display: none; position: fixed;
+      top: 54px; right: 12px; z-index: 200;
+      width: 280px; padding: 16px;
+      background: rgba(13,17,23,0.98);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      backdrop-filter: blur(16px);
     }
+    #settings-flyout.open { display: block; }
+    .fly-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+      color: #6e7681; margin-bottom: 7px;
+    }
+    .fly-input {
+      width: 100%; padding: 7px 10px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px; color: #e6edf3; font-size: 12px;
+      font-family: "SF Mono", "Fira Code", monospace;
+      outline: none; transition: border-color 0.15s;
+    }
+    .fly-input:focus { border-color: #388bfd; }
+    .fly-hint { font-size: 10px; color: #6e7681; margin-top: 5px; }
+    .fly-hint.ok  { color: #3fb950; }
+    .fly-hint.err { color: #f85149; }
 
-    #prompt {
-      flex: 1; min-width: 0; padding: 6px 11px;
+    /* ── Main ── */
+    main {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; padding: 40px 20px 60px;
+      gap: 24px;
+    }
+    .card {
+      width: 100%; max-width: 580px;
+      background: rgba(22,27,34,0.8);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px; overflow: hidden;
+    }
+    .card-body { padding: 24px; }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 2px dashed rgba(255,255,255,0.1);
+      border-radius: 8px; padding: 32px 20px;
+      text-align: center; cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag { border-color: #388bfd; background: rgba(56,139,253,0.04); }
+    .upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .upload-icon { color: #4a5568; margin-bottom: 10px; }
+    .upload-title { font-size: 14px; color: #8b949e; }
+    .upload-title span { color: #58a6ff; }
+    .upload-sub { font-size: 11px; color: #4a5568; margin-top: 4px; }
+    .file-selected {
+      display: none; align-items: center; gap: 10px;
+      padding: 10px 14px; margin-top: 10px;
+      background: rgba(56,139,253,0.08);
+      border: 1px solid rgba(56,139,253,0.2);
+      border-radius: 6px;
+    }
+    .file-selected.show { display: flex; }
+    .file-selected svg { color: #58a6ff; flex-shrink: 0; }
+    .file-name-text { font-size: 13px; color: #e6edf3; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-size { font-size: 11px; color: #8b949e; flex-shrink: 0; }
+
+    /* ── Form fields ── */
+    .field { margin-top: 16px; }
+    .field label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 6px; }
+    .field input[type=text] {
+      width: 100%; padding: 8px 11px;
       background: rgba(255,255,255,0.04);
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 6px; color: #e6edf3; font-size: 13px;
       outline: none; transition: border-color 0.15s, background 0.15s;
     }
-    #prompt:focus { border-color: #388bfd; background: rgba(56,139,253,0.06); }
-    #prompt::placeholder { color: #3d444d; }
+    .field input:focus { border-color: #388bfd; background: rgba(56,139,253,0.04); }
+    .field input::placeholder { color: #3d444d; }
 
-    #analyze-btn {
-      padding: 6px 18px;
+    /* ── Action button ── */
+    #run-btn {
+      margin-top: 18px; width: 100%; padding: 10px;
       background: #238636; border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 6px; color: #fff; font-size: 13px; font-weight: 600;
-      cursor: pointer; white-space: nowrap; transition: background 0.15s;
-      flex-shrink: 0;
+      border-radius: 7px; color: #fff; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
     }
-    #analyze-btn:hover:not(:disabled) { background: #2ea043; }
-    #analyze-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-    #analyze-btn.loading { background: #1a3a26; }
+    #run-btn:hover:not(:disabled) { background: #2ea043; }
+    #run-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    #run-btn.loading { background: #1a3a26; }
 
-    /* ── Results panel ────────────────────────────────────────────────────── */
-    #results {
-      position: fixed;
-      right: 0; top: 52px; bottom: 0;
-      width: 268px; z-index: 100;
-      background: rgba(13, 17, 23, 0.88);
-      border-left: 1px solid rgba(255,255,255,0.07);
-      backdrop-filter: blur(14px);
-      transform: translateX(100%);
-      transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-      display: flex; flex-direction: column; overflow: hidden;
-    }
-    #results.open { transform: translateX(0); }
+    /* ── Progress ── */
+    #progress-section { display: none; padding: 18px 24px; border-top: 1px solid rgba(255,255,255,0.06); }
+    #progress-section.show { display: block; }
+    .progress-bar { height: 3px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; margin-bottom: 10px; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg,#388bfd,#58a6ff); border-radius: 2px; transition: width 0.4s ease; box-shadow: 0 0 8px #388bfd80; }
+    .progress-msg { font-size: 12px; color: #8b949e; display: flex; align-items: center; gap: 8px; }
+    .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.08); border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.75s linear infinite; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* tab bar */
-    #results-tabs {
-      display: flex; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0;
+    /* ── Error ── */
+    #error-box {
+      display: none; padding: 12px 14px; margin: 0 24px 16px;
+      background: rgba(248,81,73,0.1);
+      border: 1px solid rgba(248,81,73,0.3);
+      border-radius: 6px; font-size: 12px; color: #f85149;
     }
-    .results-tab {
-      flex: 1; padding: 10px 0; font-size: 11px; text-align: center;
-      text-transform: uppercase; letter-spacing: 0.08em; color: #8b949e;
-      cursor: pointer; border-bottom: 2px solid transparent;
-      transition: color 0.15s, border-color 0.15s;
-    }
-    .results-tab.active { color: #58a6ff; border-bottom-color: #388bfd; }
+    #error-box.show { display: block; }
 
-    #results-header {
-      padding: 10px 16px 8px; font-size: 10px;
-      text-transform: uppercase; letter-spacing: 0.1em; color: #8b949e;
+    /* ── Results ── */
+    #results-card {
+      display: none; width: 100%; max-width: 580px;
+      background: rgba(22,27,34,0.8);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px; overflow: hidden;
+    }
+    #results-card.show { display: block; }
+    .results-header {
       display: flex; align-items: center; justify-content: space-between;
-      flex-shrink: 0;
+      padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.06);
     }
+    .results-title { font-size: 13px; font-weight: 600; color: #e6edf3; display: flex; align-items: center; gap: 8px; }
     .results-badge {
-      background: rgba(255,255,255,0.08); padding: 2px 7px; border-radius: 10px;
-      font-size: 11px; text-transform: none; letter-spacing: 0; color: #e6edf3;
+      background: rgba(255,255,255,0.08); padding: 2px 8px;
+      border-radius: 10px; font-size: 11px; font-weight: 400; color: #8b949e;
     }
-
-    /* tab panels */
-    #tab-objects, #tab-frames, #tab-cameras {
-      display: none; flex-direction: column; flex: 1; overflow: hidden;
-    }
-    #tab-objects.active, #tab-frames.active, #tab-cameras.active { display: flex; }
-
-    #results-list { overflow-y: auto; flex: 1; padding: 8px 0; }
-
-    /* ── Frames tab ───────────────────────────────────────────────────────── */
-    #frames-controls {
-      display: flex; gap: 6px; padding: 8px 12px 4px; flex-shrink: 0;
-    }
-    .frames-toggle {
-      flex: 1; padding: 4px 8px;
-      background: rgba(255,255,255,0.04);
+    .results-actions { display: flex; gap: 8px; }
+    .action-btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 11px; border-radius: 6px; font-size: 12px;
       border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 5px; color: #8b949e; font-size: 11px;
-      cursor: pointer; text-align: center;
-      transition: background 0.15s, color 0.15s, border-color 0.15s;
-    }
-    .frames-toggle.active {
-      background: rgba(56,139,253,0.15);
-      border-color: #388bfd; color: #58a6ff;
-    }
-
-    #frames-grid {
-      overflow-y: auto; flex: 1; padding: 8px;
-      display: grid; grid-template-columns: repeat(2, 1fr);
-      gap: 4px; align-content: start;
-    }
-    .frame-thumb {
-      aspect-ratio: 1; object-fit: cover; border-radius: 4px;
-      cursor: pointer; border: 1px solid rgba(255,255,255,0.06);
-      transition: border-color 0.15s, transform 0.1s;
-    }
-    .frame-thumb:hover { border-color: #388bfd; transform: scale(1.03); }
-
-    /* ── Cameras tab ──────────────────────────────────────────────────────── */
-    #cameras-list { overflow-y: auto; flex: 1; padding: 6px 0; }
-
-    .camera-item {
-      padding: 10px 14px 10px;
-      border-bottom: 1px solid rgba(255,255,255,0.04);
-      transition: background 0.1s;
-    }
-    .camera-item:hover { background: rgba(255,255,255,0.03); }
-
-    .camera-header {
-      display: flex; align-items: center; gap: 8px; margin-bottom: 5px;
-    }
-    .camera-icon {
-      width: 26px; height: 26px; border-radius: 5px;
-      background: rgba(56,139,253,0.15);
-      border: 1px solid rgba(56,139,253,0.3);
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
-    }
-    .camera-name {
-      font-size: 13px; font-weight: 600; color: #e6edf3; flex: 1;
-    }
-    .camera-pos {
-      font-size: 10px; color: #6e7681;
-      font-family: "SF Mono", "Fira Code", monospace;
-      margin-bottom: 7px; padding-left: 34px;
-      line-height: 1.6;
-    }
-
-    .camera-thumb-row {
-      display: flex; gap: 6px; padding-left: 34px; align-items: flex-start;
-    }
-    .camera-thumb {
-      width: 62px; height: 62px; object-fit: cover; border-radius: 4px;
-      border: 1px solid rgba(255,255,255,0.08); flex-shrink: 0;
-      cursor: pointer; transition: border-color 0.15s;
-    }
-    .camera-thumb:hover { border-color: #388bfd; }
-
-    .camera-btns { display: flex; flex-direction: column; gap: 4px; }
-    .cam-btn {
-      padding: 4px 10px; font-size: 11px; border-radius: 5px;
-      border: 1px solid rgba(255,255,255,0.1);
-      background: rgba(255,255,255,0.05);
-      color: #e6edf3; cursor: pointer; white-space: nowrap;
+      background: rgba(255,255,255,0.05); color: #e6edf3;
+      cursor: pointer; text-decoration: none;
       transition: background 0.15s, border-color 0.15s;
     }
-    .cam-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
-    .cam-btn.teleport { color: #58a6ff; border-color: rgba(56,139,253,0.3); }
-    .cam-btn.teleport:hover { background: rgba(56,139,253,0.12); border-color: #388bfd; }
-    .cam-btn.depth-btn { color: #fde047; border-color: rgba(253,224,71,0.25); }
-    .cam-btn.depth-btn:hover { background: rgba(253,224,71,0.08); border-color: rgba(253,224,71,0.5); }
+    .action-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+    .action-btn.primary { background: rgba(56,139,253,0.1); border-color: rgba(56,139,253,0.3); color: #58a6ff; }
+    .action-btn.primary:hover { background: rgba(56,139,253,0.18); }
 
-    /* ── Object result items ──────────────────────────────────────────────── */
-    .result-item {
-      display: flex; align-items: center; gap: 10px;
-      padding: 9px 16px; transition: background 0.1s; cursor: default;
+    /* ── Objects list ── */
+    #objects-list { padding: 6px 0; }
+    .obj-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 20px; border-bottom: 1px solid rgba(255,255,255,0.04);
     }
-    .result-item:hover { background: rgba(255,255,255,0.04); }
-    .result-dot {
-      width: 9px; height: 9px; border-radius: 50%;
-      flex-shrink: 0; box-shadow: 0 0 6px currentColor;
-      cursor: pointer; transition: opacity 0.2s, box-shadow 0.2s;
-      flex-shrink: 0;
+    .obj-row:last-child { border-bottom: none; }
+    .obj-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      flex-shrink: 0; box-shadow: 0 0 7px currentColor;
     }
-    .result-dot.off {
-      opacity: 0.18; box-shadow: none !important;
+    .obj-info { flex: 1; min-width: 0; }
+    .obj-label { font-size: 13px; font-weight: 500; text-transform: capitalize; }
+    .obj-pos {
+      font-size: 10px; color: #6e7681; margin-top: 2px;
+      font-family: "SF Mono","Fira Code",monospace;
     }
-    #toggle-all-btn {
-      padding: 2px 8px; font-size: 10px; border-radius: 4px;
-      border: 1px solid rgba(255,255,255,0.1);
-      background: rgba(255,255,255,0.04); color: #8b949e;
-      cursor: pointer; transition: background 0.15s, color 0.15s;
-      white-space: nowrap;
-    }
-    #toggle-all-btn:hover { background: rgba(255,255,255,0.1); color: #e6edf3; }
+    .obj-size { font-size: 11px; color: #8b949e; text-align: right; flex-shrink: 0; font-family: "SF Mono","Fira Code",monospace; }
 
-    /* ── Eye button ───────────────────────────────────────────────────────── */
-    .result-eye-btn {
-      padding: 4px 6px; background: transparent; flex-shrink: 0;
-      border: 1px solid rgba(255,255,255,0.08); border-radius: 4px;
-      color: #4a5568; cursor: pointer;
-      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    /* ── Footer ── */
+    footer {
+      text-align: center; padding: 24px;
+      font-size: 11px; color: #3d444d;
     }
-    .result-eye-btn:hover { color: #58a6ff; border-color: rgba(56,139,253,0.4); background: rgba(56,139,253,0.08); }
-
-    /* ── Settings button + panel ──────────────────────────────────────────── */
-    #settings-btn {
-      display: flex; align-items: center; gap: 5px;
-      padding: 5px 10px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.10);
-      border-radius: 6px; color: #8b949e; font-size: 12px;
-      cursor: pointer; white-space: nowrap; flex-shrink: 0;
-      transition: background 0.15s, color 0.15s;
-    }
-    #settings-btn:hover, #settings-btn.open { background: rgba(255,255,255,0.1); color: #e6edf3; }
-
-    #settings-panel {
-      display: none; position: fixed;
-      top: 52px; right: 0;
-      width: 252px; z-index: 150;
-      background: rgba(13,17,23,0.97);
-      border-left: 1px solid rgba(255,255,255,0.07);
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-      backdrop-filter: blur(14px);
-      padding: 14px 16px;
-    }
-    #settings-panel.open { display: block; }
-
-    .settings-section { margin-bottom: 16px; }
-    .settings-section:last-child { margin-bottom: 0; }
-    .settings-label {
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
-      color: #6e7681; margin-bottom: 8px;
-    }
-    .settings-row {
-      display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
-    }
-    .settings-row label { font-size: 12px; color: #8b949e; flex: 1; }
-    .settings-row input[type=range] {
-      flex: 1; accent-color: #388bfd; cursor: pointer;
-    }
-    .settings-row span { font-size: 11px; color: #e6edf3; width: 28px; text-align: right; }
-    .dl-btn {
-      display: flex; align-items: center; gap: 7px;
-      width: 100%; padding: 7px 10px; margin-bottom: 6px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 6px; color: #e6edf3; font-size: 12px;
-      cursor: pointer; transition: background 0.15s, border-color 0.15s;
-      text-align: left;
-    }
-    .dl-btn:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.2); }
-    .dl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-    .result-info { flex: 1; min-width: 0; }
-    .result-label {
-      font-size: 13px; text-transform: capitalize;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .result-pos {
-      font-size: 10px; color: #6e7681;
-      font-family: "SF Mono", "Fira Code", monospace; margin-top: 1px;
-    }
-    .result-frames-btn {
-      margin-top: 4px; padding: 2px 8px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 4px; color: #8b949e; font-size: 10px;
-      cursor: pointer; white-space: nowrap;
-      transition: background 0.15s, color 0.15s;
-    }
-    .result-frames-btn:hover { background: rgba(56,139,253,0.12); color: #58a6ff; border-color: #388bfd; }
-
-    /* ── Lightbox ─────────────────────────────────────────────────────────── */
-    #lightbox {
-      display: none; position: fixed; inset: 0; z-index: 400;
-      background: rgba(0,0,0,0.88);
-      align-items: center; justify-content: center;
-    }
-    #lightbox.open { display: flex; }
-    #lightbox-content {
-      position: relative; display: inline-block;
-      max-width: 90vw; max-height: 90vh;
-    }
-    #lightbox-img {
-      display: block; max-width: 90vw; max-height: 90vh;
-      border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,0.7);
-    }
-    #lightbox-canvas {
-      position: absolute; inset: 0;
-      width: 100%; height: 100%;
-      pointer-events: none; border-radius: 6px;
-    }
-    #lightbox-close {
-      position: absolute; top: 16px; right: 20px;
-      font-size: 28px; color: #fff; cursor: pointer;
-      line-height: 1; opacity: 0.7; z-index: 1;
-    }
-    #lightbox-close:hover { opacity: 1; }
-    #lightbox-nav {
-      position: absolute; bottom: 20px; left: 50%;
-      transform: translateX(-50%); display: flex; gap: 10px;
-    }
-    .lb-btn {
-      padding: 6px 16px; background: rgba(255,255,255,0.12);
-      border: 1px solid rgba(255,255,255,0.2); border-radius: 6px;
-      color: #fff; font-size: 13px; cursor: pointer;
-    }
-    .lb-btn:hover { background: rgba(255,255,255,0.2); }
-
-    /* ── Status bar ───────────────────────────────────────────────────────── */
-    #status-bar {
-      position: fixed; bottom: 20px; left: 50%;
-      transform: translateX(-50%); z-index: 100;
-      padding: 7px 16px;
-      background: rgba(13, 17, 23, 0.92);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 20px; font-size: 12px; color: #8b949e;
-      backdrop-filter: blur(10px); pointer-events: none;
-      white-space: nowrap; max-width: calc(100vw - 40px);
-      overflow: hidden; text-overflow: ellipsis;
-      transition: opacity 0.3s;
-    }
-
-    /* ── Loading overlay ──────────────────────────────────────────────────── */
-    #loading {
-      position: fixed; inset: 0; z-index: 200; background: #0d1117;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 14px; transition: opacity 0.4s;
-    }
-    #loading.hidden { opacity: 0; pointer-events: none; }
-    .spinner {
-      width: 28px; height: 28px;
-      border: 2px solid rgba(255,255,255,0.08);
-      border-top-color: #58a6ff; border-radius: 50%;
-      animation: spin 0.75s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    #loading-msg { font-size: 13px; color: #8b949e; }
-
-    /* ── Drop overlay ─────────────────────────────────────────────────────── */
-    #drop-overlay {
-      position: fixed; inset: 0; z-index: 300;
-      background: rgba(56, 139, 253, 0.07);
-      border: 2px dashed rgba(56, 139, 253, 0.6);
-      margin: 10px; border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 17px; font-weight: 600; color: #58a6ff;
-      pointer-events: none; opacity: 0; transition: opacity 0.15s;
-    }
-    #drop-overlay.visible { opacity: 1; }
-
-    /* ── 3D labels ────────────────────────────────────────────────────────── */
-    .bbox-label {
-      padding: 3px 8px; border-radius: 4px;
-      font-size: 11px; font-weight: 600;
-      font-family: -apple-system, sans-serif;
-      pointer-events: none; white-space: nowrap;
-      letter-spacing: 0.03em; text-transform: capitalize;
-      background: rgba(13, 17, 23, 0.85);
-      border: 1px solid; backdrop-filter: blur(4px);
-    }
-
-    /* ── Progress bar ─────────────────────────────────────────────────────── */
-    #progress-bar {
-      position: fixed; top: 52px; left: 0; right: 0;
-      height: 2px; z-index: 101;
-      background: transparent; pointer-events: none;
-    }
-    #progress-fill {
-      height: 100%; width: 0%;
-      background: linear-gradient(90deg, #388bfd, #58a6ff);
-      transition: width 0.4s ease;
-      box-shadow: 0 0 8px #388bfd;
-    }
-
-    /* ── Controls hint ────────────────────────────────────────────────────── */
-    #controls-hint {
-      position: fixed; bottom: 20px; right: 16px; z-index: 100;
-      padding: 6px 12px;
-      background: rgba(13, 17, 23, 0.75);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 8px; font-size: 10px; color: #4a5568;
-      pointer-events: none; line-height: 1.7;
-    }
-    #controls-hint span { color: #8b949e; }
+    footer a { color: #4a5568; text-decoration: none; }
+    footer a:hover { color: #8b949e; }
   </style>
 </head>
 <body>
 
-  <!-- Top bar -->
-  <div id="topbar">
-    <div class="logo">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
-        <line x1="12" y1="22" x2="12" y2="15.5"/>
-        <polyline points="22 8.5 12 15.5 2 8.5"/>
-      </svg>
-      Splat Analyzer
-    </div>
-    <div class="sep"></div>
-    <label id="file-label" for="file-input">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 018 4.25V1.5H3.75zm6.75.5v2.25c0 .138.112.25.25.25h2.25L10.5 2z"/>
-      </svg>
-      Open Splat
-    </label>
-    <input type="file" id="file-input" accept=".ply,.splat,.spz,.sogs,.ksplat" style="display:none">
-    <span id="filename">No file selected</span>
-    <div class="sep"></div>
-    <input id="prompt" type="text"
-      placeholder="Objects to detect: sofa, TV, chair…"
-      value="television, sofa, armchair, air conditioner">
-    <button id="analyze-btn" disabled>Analyze →</button>
-    <div class="sep"></div>
-    <button id="settings-btn">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-      </svg>
-      Settings
-    </button>
-  </div>
+<header>
+  <a href="/" class="logo">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+      <line x1="12" y1="22" x2="12" y2="15.5"/>
+      <polyline points="22 8.5 12 15.5 2 8.5"/>
+    </svg>
+    WorldModelData
+  </a>
+  <nav>
+    <a href="/debug">3D Debug View</a>
+    <a href="/docs">API Docs</a>
+    <a href="/admin">Admin</a>
+  </nav>
+  <div class="header-sep"></div>
+  <button id="settings-btn">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+    Settings
+  </button>
+</header>
 
-  <!-- Settings panel -->
-  <div id="settings-panel">
-    <div class="settings-section">
-      <div class="settings-label">Display</div>
-      <div class="settings-row">
-        <label>Box line width</label>
-        <input type="range" id="line-width-slider" min="1" max="8" step="0.5" value="2">
-        <span id="line-width-val">2px</span>
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-label">Downloads</div>
-      <button class="dl-btn" id="dl-json-btn" disabled>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Detections JSON
-      </button>
-      <button class="dl-btn" id="dl-frames-btn" disabled>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Raw Frames + Depth (zip)
-      </button>
-    </div>
-  </div>
+<!-- Settings flyout -->
+<div id="settings-flyout">
+  <div class="fly-label">API Key</div>
+  <input class="fly-input" type="password" id="api-key-input"
+         placeholder="wmd_…" autocomplete="off" spellcheck="false">
+  <div class="fly-hint" id="api-key-hint">No key set</div>
+</div>
 
-  <!-- Progress bar -->
-  <div id="progress-bar"><div id="progress-fill"></div></div>
+<main>
+  <div class="card">
+    <div class="card-body">
 
-  <!-- Results panel -->
-  <div id="results">
-    <div id="results-tabs">
-      <div class="results-tab active" data-tab="objects">Objects</div>
-      <div class="results-tab" data-tab="frames">Frames</div>
-      <div class="results-tab" data-tab="cameras">Cameras</div>
-    </div>
-
-    <!-- Objects tab -->
-    <div id="tab-objects" class="active">
-      <div id="results-header">
-        Detected Objects
-        <div style="display:flex;align-items:center;gap:6px;">
-          <button id="toggle-all-btn">Hide All</button>
-          <span id="results-count" class="results-badge">0</span>
+      <!-- Upload zone -->
+      <div class="upload-zone" id="upload-zone">
+        <input type="file" id="file-input" accept=".ply,.splat">
+        <div class="upload-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 16 12 12 8 16"/>
+            <line x1="12" y1="12" x2="12" y2="21"/>
+            <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+          </svg>
         </div>
+        <div class="upload-title">Drop <strong>.ply</strong> file here or <span>browse</span></div>
+        <div class="upload-sub">Gaussian Splat file</div>
       </div>
-      <div id="results-list"></div>
+
+      <div class="file-selected" id="file-selected">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 018 4.25V1.5H3.75zm6.75.5v2.25c0 .138.112.25.25.25h2.25L10.5 2z"/>
+        </svg>
+        <span class="file-name-text" id="file-name-text"></span>
+        <span class="file-size" id="file-size-text"></span>
+      </div>
+
+      <div class="field">
+        <label for="prompt-input">Object classes to detect</label>
+        <input type="text" id="prompt-input"
+               placeholder="e.g. sofa, chair, television, table"
+               value="television, sofa, armchair, chair">
+      </div>
+
+      <button id="run-btn" disabled>Run Detection →</button>
     </div>
 
-    <!-- Frames tab -->
-    <div id="tab-frames">
-      <div id="results-header">
-        Rendered Views
-        <span id="frames-count" class="results-badge">0</span>
-      </div>
-      <div id="frames-controls">
-        <button class="frames-toggle active" id="toggle-rgb">RGB</button>
-        <button class="frames-toggle" id="toggle-depth">Depth</button>
-      </div>
-      <div id="frames-grid"></div>
+    <div id="progress-section">
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+      <div class="progress-msg"><div class="spinner"></div><span id="progress-msg">Uploading…</span></div>
     </div>
 
-    <!-- Cameras tab -->
-    <div id="tab-cameras">
-      <div id="results-header">
-        Camera Positions
-        <span id="cameras-count" class="results-badge">0</span>
-      </div>
-      <div id="cameras-list"></div>
-    </div>
+    <div id="error-box"></div>
   </div>
 
-  <!-- Lightbox -->
-  <div id="lightbox">
-    <span id="lightbox-close">&times;</span>
-    <div id="lightbox-content">
-      <img id="lightbox-img" src="" alt="">
-      <canvas id="lightbox-canvas"></canvas>
+  <!-- Results card -->
+  <div id="results-card">
+    <div class="results-header">
+      <div class="results-title">
+        Detected Objects
+        <span class="results-badge" id="obj-count">0</span>
+      </div>
+      <div class="results-actions">
+        <button class="action-btn" id="dl-json-btn">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          JSON
+        </button>
+        <a class="action-btn primary" id="debug-link" href="/debug">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/></svg>
+          3D Viewer
+        </a>
+      </div>
     </div>
-    <div id="lightbox-nav">
-      <button class="lb-btn" id="lb-prev">&#8592; Prev</button>
-      <span id="lb-index" style="color:#8b949e;font-size:12px;align-self:center;"></span>
-      <button class="lb-btn" id="lb-next">Next &#8594;</button>
-    </div>
+    <div id="objects-list"></div>
   </div>
+</main>
 
-  <!-- Status bar -->
-  <div id="status-bar">Drop a .ply file or click Open Splat</div>
+<footer>
+  WorldModelData &nbsp;·&nbsp;
+  <a href="/docs">API Reference</a> &nbsp;·&nbsp;
+  <a href="/debug">3D Debug View</a> &nbsp;·&nbsp;
+  <a href="/admin">Admin Panel</a>
+</footer>
 
-  <!-- Controls hint -->
-  <div id="controls-hint">
-    <span>WASD</span> move &nbsp;·&nbsp; <span>Q/E</span> up/down<br>
-    <span>Drag</span> look &nbsp;·&nbsp; <span>Scroll</span> zoom
-  </div>
+<script>
+  const COLOURS = {
+    television:"#00e5ff",tv:"#00e5ff",monitor:"#00e5ff",screen:"#00e5ff",
+    sofa:"#00ff88",couch:"#00ff88",
+    armchair:"#ffaa00",chair:"#ffaa00",
+    desk:"#ff69b4",table:"#ff69b4",
+    "air conditioner":"#4488ff",
+    bed:"#c084fc",cabinet:"#e879f9",wardrobe:"#e879f9",
+    lamp:"#fde047",light:"#fde047",
+    refrigerator:"#67e8f9",fridge:"#67e8f9",
+  };
+  function labelColour(label) {
+    const l = label.toLowerCase();
+    for (const [k,v] of Object.entries(COLOURS)) if (l.includes(k)) return v;
+    return "#8b949e";
+  }
 
-  <!-- Drop overlay -->
-  <div id="drop-overlay">Drop your .ply here</div>
+  // ── API key ──────────────────────────────────────────────────────────────
+  const apiKeyInput = document.getElementById("api-key-input");
+  const apiKeyHint  = document.getElementById("api-key-hint");
+  const settingsBtn = document.getElementById("settings-btn");
+  const settingsFly = document.getElementById("settings-flyout");
 
-  <!-- Loading overlay -->
-  <div id="loading">
-    <div class="spinner"></div>
-    <span id="loading-msg">Starting up…</span>
-  </div>
+  function getApiKey() { return localStorage.getItem("wmd_api_key") || ""; }
 
-  <!-- Three.js canvas target -->
-  <div id="viewport"></div>
-
-  <!-- Import map -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.179.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.179.0/examples/jsm/",
-      "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.0.0/spark.module.js"
+  function updateKeyHint() {
+    const k = getApiKey();
+    if (k) {
+      apiKeyHint.textContent = "Key set: " + k.slice(0,12) + "…";
+      apiKeyHint.className = "fly-hint ok";
+    } else {
+      apiKeyHint.textContent = "No key — enter your API key above";
+      apiKeyHint.className = "fly-hint err";
     }
   }
-  </script>
 
-  <script type="module">
-    import * as THREE from "three";
-    import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-    import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
-    import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
-    import { LineMaterial } from "three/addons/lines/LineMaterial.js";
-    import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
+  apiKeyInput.value = getApiKey();
+  updateKeyHint();
 
-    const API = "http://1.2.3.4:8000";
+  apiKeyInput.addEventListener("input", () => {
+    localStorage.setItem("wmd_api_key", apiKeyInput.value.trim());
+    updateKeyHint();
+  });
 
-    // ─── Colour map ─────────────────────────────────────────────────────────
-    const COLOURS = {
-      television: "#00e5ff", tv: "#00e5ff", monitor: "#00e5ff", screen: "#00e5ff",
-      sofa: "#00ff88", couch: "#00ff88",
-      armchair: "#ffaa00", chair: "#ffaa00",
-      desk: "#ff69b4", table: "#ff69b4",
-      "air conditioner": "#4488ff", ac: "#4488ff",
-      bed: "#c084fc", cabinet: "#e879f9", wardrobe: "#e879f9",
-      lamp: "#fde047", light: "#fde047",
-      refrigerator: "#67e8f9", fridge: "#67e8f9",
-    };
-    function labelColour(label) {
-      const l = label.toLowerCase();
-      for (const [k, v] of Object.entries(COLOURS)) if (l.includes(k)) return v;
-      return "#ffffff";
+  settingsBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    settingsFly.classList.toggle("open");
+    settingsBtn.classList.toggle("open", settingsFly.classList.contains("open"));
+  });
+  document.addEventListener("click", (e) => {
+    if (!settingsFly.contains(e.target) && e.target !== settingsBtn) {
+      settingsFly.classList.remove("open");
+      settingsBtn.classList.remove("open");
     }
+  });
 
-    // ─── Three.js setup ─────────────────────────────────────────────────────
-    const viewport = document.getElementById("viewport");
+  // ── File handling ────────────────────────────────────────────────────────
+  const fileInput     = document.getElementById("file-input");
+  const uploadZone    = document.getElementById("upload-zone");
+  const fileSelected  = document.getElementById("file-selected");
+  const fileNameText  = document.getElementById("file-name-text");
+  const fileSizeText  = document.getElementById("file-size-text");
+  const runBtn        = document.getElementById("run-btn");
+  let selectedFile    = null;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    viewport.appendChild(renderer.domElement);
+  function setFile(file) {
+    if (!file) return;
+    selectedFile = file;
+    fileNameText.textContent = file.name;
+    fileSizeText.textContent = (file.size / 1048576).toFixed(1) + " MB";
+    fileSelected.classList.add("show");
+    runBtn.disabled = false;
+  }
 
-    const labelRenderer = new CSS2DRenderer();
-    labelRenderer.setSize(window.innerWidth, window.innerHeight);
-    labelRenderer.domElement.style.cssText =
-      "position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:50;";
-    document.body.appendChild(labelRenderer.domElement);
+  fileInput.addEventListener("change", (e) => setFile(e.target.files[0]));
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0d1117);
+  uploadZone.addEventListener("dragover",  (e) => { e.preventDefault(); uploadZone.classList.add("drag"); });
+  uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("drag"));
+  uploadZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove("drag");
+    const f = e.dataTransfer?.files[0];
+    if (f) setFile(f);
+  });
 
-    const camera = new THREE.PerspectiveCamera(
-      60, window.innerWidth / window.innerHeight, 0.01, 2000
-    );
-    camera.position.set(0, 2, 10);
-    camera.lookAt(0, 0, 0);
+  // ── Detection flow ───────────────────────────────────────────────────────
+  const progressSection = document.getElementById("progress-section");
+  const progressFill    = document.getElementById("progress-fill");
+  const progressMsg     = document.getElementById("progress-msg");
+  const errorBox        = document.getElementById("error-box");
+  const resultsCard     = document.getElementById("results-card");
+  const objectsList     = document.getElementById("objects-list");
+  const objCount        = document.getElementById("obj-count");
+  const dlJsonBtn       = document.getElementById("dl-json-btn");
+  const debugLink       = document.getElementById("debug-link");
+  let lastJobId         = null;
+  let lastObjects       = [];
 
-    const spark = new SparkRenderer({ renderer });
-    scene.add(spark);
+  function showProgress(msg, pct) {
+    progressSection.classList.add("show");
+    progressMsg.textContent = msg;
+    progressFill.style.width = pct + "%";
+  }
+  function hideProgress() {
+    progressSection.classList.remove("show");
+    progressFill.style.width = "0%";
+  }
+  function showError(msg) {
+    errorBox.textContent = msg;
+    errorBox.classList.add("show");
+  }
+  function hideError() { errorBox.classList.remove("show"); }
 
-    const boxGroup = new THREE.Group();
-    scene.add(boxGroup);
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-    // ─── FPS Camera Controller ───────────────────────────────────────────────
-    // Euler in YXZ order: yaw (Y) then pitch (X). This avoids gimbal lock for
-    // typical head rotation ranges.
-    const camEuler = new THREE.Euler(0, 0, 0, "YXZ");
-    camEuler.setFromQuaternion(camera.quaternion, "YXZ");
+  let pctTicker = null;
+  function startProgressTicker(from) {
+    let pct = from;
+    pctTicker = setInterval(() => {
+      pct = Math.min(pct + (88 - pct) * 0.025, 88);
+      progressFill.style.width = pct + "%";
+    }, 1200);
+  }
+  function stopTicker() { clearInterval(pctTicker); pctTicker = null; }
 
-    const moveKeys = { w: false, a: false, s: false, d: false, q: false, e: false };
-    let isDragging = false;
-    let lastMX = 0, lastMY = 0;
-    let moveSpeed = 0.08;  // updated after scene loads
-
-    const LOOK_SENSITIVITY = 0.003;
-
-    // Mouse drag to rotate camera (free-look, not orbit)
-    viewport.addEventListener("mousedown", (e) => {
-      if (e.button === 0) {
-        isDragging = true;
-        flyTo = null; // cancel any fly-to
-        lastMX = e.clientX;
-        lastMY = e.clientY;
-        viewport.classList.add("dragging");
-      }
-    });
-    document.addEventListener("mousemove", (e) => {
-      if (!isDragging) return;
-      const dx = e.clientX - lastMX;
-      const dy = e.clientY - lastMY;
-      lastMX = e.clientX;
-      lastMY = e.clientY;
-
-      camEuler.setFromQuaternion(camera.quaternion, "YXZ");
-      camEuler.y -= dx * LOOK_SENSITIVITY;
-      camEuler.x  = Math.max(-Math.PI / 2, Math.min(Math.PI / 2,
-                      camEuler.x - dy * LOOK_SENSITIVITY));
-      camera.quaternion.setFromEuler(camEuler);
-    });
-    document.addEventListener("mouseup", () => {
-      isDragging = false;
-      viewport.classList.remove("dragging");
-    });
-
-    // Scroll wheel: move forward/backward along look direction
-    viewport.addEventListener("wheel", (e) => {
-      e.preventDefault();
-      const fwd = new THREE.Vector3();
-      camera.getWorldDirection(fwd);
-      camera.position.addScaledVector(fwd, -e.deltaY * moveSpeed * 0.1);
-    }, { passive: false });
-
-    // WASD + Q/E — only when not typing in an input
-    document.addEventListener("keydown", (e) => {
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
-      const k = e.key.toLowerCase();
-      if (k in moveKeys) { moveKeys[k] = true; flyTo = null; e.preventDefault(); }
-    });
-    document.addEventListener("keyup", (e) => {
-      const k = e.key.toLowerCase();
-      if (k in moveKeys) moveKeys[k] = false;
-    });
-
-    function updateFPSCamera() {
-      // Fly-to animation (overrides manual movement while active)
-      if (flyTo) {
-        flyTo.t = Math.min(1, flyTo.t + 0.035);
-        const ease = 1 - Math.pow(1 - flyTo.t, 3); // ease-out cubic
-        camera.position.lerpVectors(flyTo.startPos, flyTo.endPos, ease);
-        camera.quaternion.slerpQuaternions(flyTo.startQuat, flyTo.endQuat, ease);
-        camEuler.setFromQuaternion(camera.quaternion, "YXZ");
-        if (flyTo.t >= 1) flyTo = null;
-        return;
-      }
-      if (!Object.values(moveKeys).some(Boolean)) return;
-      const fwd   = new THREE.Vector3(); camera.getWorldDirection(fwd);
-      const right = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
-      const speed = moveSpeed;
-      if (moveKeys.w) camera.position.addScaledVector(fwd,   speed);
-      if (moveKeys.s) camera.position.addScaledVector(fwd,  -speed);
-      if (moveKeys.a) camera.position.addScaledVector(right, -speed);
-      if (moveKeys.d) camera.position.addScaledVector(right,  speed);
-      if (moveKeys.e) camera.position.y += speed;
-      if (moveKeys.q) camera.position.y -= speed;
+  runBtn.addEventListener("click", async () => {
+    const key = getApiKey();
+    if (!key) {
+      settingsFly.classList.add("open");
+      settingsBtn.classList.add("open");
+      showError("Enter your API key in Settings first.");
+      return;
     }
+    if (!selectedFile) return;
 
-    // ─── Render loop ─────────────────────────────────────────────────────────
-    renderer.setAnimationLoop(() => {
-      updateFPSCamera();
-      renderer.render(scene, camera);
-      labelRenderer.render(scene, camera);
-    });
+    runBtn.disabled = true;
+    runBtn.classList.add("loading");
+    runBtn.textContent = "Running…";
+    hideError();
+    resultsCard.classList.remove("show");
 
-    window.addEventListener("resize", () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      labelRenderer.setSize(window.innerWidth, window.innerHeight);
-      objectMeshes.forEach(e => {
-        if (e.lineMat) e.lineMat.resolution.set(window.innerWidth, window.innerHeight);
+    try {
+      // 1. Submit
+      showProgress("Uploading file…", 5);
+      const form = new FormData();
+      form.append("file",   selectedFile);
+      form.append("prompt", document.getElementById("prompt-input").value);
+      const submitRes = await fetch("/api/v1/detect", {
+        method: "POST",
+        headers: { "X-API-Key": key },
+        body: form,
       });
-    });
+      if (!submitRes.ok) throw new Error("Submit failed: " + (await submitRes.text()).slice(0,200));
+      const { job_id } = await submitRes.json();
+      lastJobId = job_id;
 
-    // ─── State ───────────────────────────────────────────────────────────────
-    let currentSplat        = null;
-    let loadedFile          = null;
-    let analysing           = false;
-    let currentJobId        = null;
-    let currentRgbUrls      = [];
-    let currentDepthUrls    = [];
-    let showingDepth        = false;
-    let lightboxIdx         = 0;
-    let lightboxUrls        = [];
-    let lightboxAnnotMap    = null;
-    let cameraGroupsData    = [];
-    let frameAnnotationsData = {};
-    // per-object mesh references for visibility toggling
-    // each entry: { meshes: [Three.js objects], lineMat, visible: true, dot: HTMLElement }
-    let objectMeshes        = [];
-    let currentLineWidth    = 2;
-    let currentDetections   = [];   // raw objects array from last API response
-    let flyTo               = null; // {startPos,endPos,startQuat,endQuat,t}
+      // 2. Poll
+      showProgress("Job queued — rendering camera views…", 12);
+      startProgressTicker(12);
 
-    // ─── UI refs ─────────────────────────────────────────────────────────────
-    const fileInput    = document.getElementById("file-input");
-    const promptInput  = document.getElementById("prompt");
-    const analyzeBtn   = document.getElementById("analyze-btn");
-    const statusBar    = document.getElementById("status-bar");
-    const resultsPanel = document.getElementById("results");
-    const resultsList  = document.getElementById("results-list");
-    const resultsCount = document.getElementById("results-count");
-    const framesGrid   = document.getElementById("frames-grid");
-    const framesCount  = document.getElementById("frames-count");
-    const camerasList  = document.getElementById("cameras-list");
-    const camerasCount = document.getElementById("cameras-count");
-    const filenameEl   = document.getElementById("filename");
-    const loadingEl    = document.getElementById("loading");
-    const loadingMsg   = document.getElementById("loading-msg");
-    const dropOverlay  = document.getElementById("drop-overlay");
-    const progressFill = document.getElementById("progress-fill");
-    const lightbox       = document.getElementById("lightbox");
-    const lightboxImg    = document.getElementById("lightbox-img");
-    const lightboxCanvas = document.getElementById("lightbox-canvas");
-    const lbIndex        = document.getElementById("lb-index");
-    const toggleRgb       = document.getElementById("toggle-rgb");
-    const toggleDepth     = document.getElementById("toggle-depth");
-    const toggleAllBtn    = document.getElementById("toggle-all-btn");
-
-    // ── Object visibility toggles ─────────────────────────────────────────────
-    function setObjectVisible(idx, visible) {
-      const entry = objectMeshes[idx];
-      if (!entry) return;
-      entry.visible = visible;
-      entry.meshes.forEach(m => { m.visible = visible; });
-      entry.dot.classList.toggle("off", !visible);
-    }
-
-    function toggleObject(idx) {
-      if (objectMeshes[idx]) setObjectVisible(idx, !objectMeshes[idx].visible);
-      updateToggleAllBtn();
-    }
-
-    function updateToggleAllBtn() {
-      const allVisible = objectMeshes.every(e => e.visible);
-      toggleAllBtn.textContent = allVisible ? "Hide All" : "Show All";
-    }
-
-    toggleAllBtn.addEventListener("click", () => {
-      const allVisible = objectMeshes.every(e => e.visible);
-      objectMeshes.forEach((_, i) => setObjectVisible(i, !allVisible));
-      toggleAllBtn.textContent = allVisible ? "Show All" : "Hide All";
-    });
-
-    // ── Settings panel ────────────────────────────────────────────────────────
-    const settingsBtn   = document.getElementById("settings-btn");
-    const settingsPanel = document.getElementById("settings-panel");
-    const lineWidthSlider = document.getElementById("line-width-slider");
-    const lineWidthVal    = document.getElementById("line-width-val");
-    const dlJsonBtn     = document.getElementById("dl-json-btn");
-    const dlFramesBtn   = document.getElementById("dl-frames-btn");
-
-    settingsBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      settingsPanel.classList.toggle("open");
-      settingsBtn.classList.toggle("open", settingsPanel.classList.contains("open"));
-    });
-    document.addEventListener("click", (e) => {
-      if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) {
-        settingsPanel.classList.remove("open");
-        settingsBtn.classList.remove("open");
-      }
-    });
-
-    lineWidthSlider.addEventListener("input", () => {
-      currentLineWidth = parseFloat(lineWidthSlider.value);
-      lineWidthVal.textContent = currentLineWidth + "px";
-      objectMeshes.forEach(entry => {
-        if (entry.lineMat) { entry.lineMat.linewidth = currentLineWidth; }
-      });
-    });
-
-    dlJsonBtn.addEventListener("click", () => {
-      if (!currentDetections.length) return;
-      const payload = { job_id: currentJobId, objects: currentDetections };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const a = Object.assign(document.createElement("a"), {
-        href: URL.createObjectURL(blob), download: "detections.json",
-      });
-      a.click(); URL.revokeObjectURL(a.href);
-    });
-
-    dlFramesBtn.addEventListener("click", () => {
-      if (!currentJobId) return;
-      const a = Object.assign(document.createElement("a"), {
-        href: `${API}/jobs/${currentJobId}/download`,
-        download: `splat_${currentJobId.slice(0,8)}.zip`,
-      });
-      a.click();
-    });
-
-    // ── Fly-to object ─────────────────────────────────────────────────────────
-    function flyToObject(px, py, pz, sx, sy, sz) {
-      const center  = new THREE.Vector3(px, py, pz);
-      const viewDist = Math.max(sx, sy, sz) * 2.8 + 1.5;
-      // Approach from current camera direction toward the object
-      const toObj = center.clone().sub(camera.position);
-      const dir   = toObj.length() > 0.01
-        ? toObj.normalize()
-        : new THREE.Vector3(0, 0, -1);
-      const endPos = center.clone().sub(dir.clone().multiplyScalar(viewDist));
-      // Compute target quaternion without moving the real camera
-      const m = new THREE.Matrix4().lookAt(endPos, center, new THREE.Vector3(0, 1, 0));
-      flyTo = {
-        startPos:  camera.position.clone(),
-        endPos,
-        startQuat: camera.quaternion.clone(),
-        endQuat:   new THREE.Quaternion().setFromRotationMatrix(m),
-        t: 0,
-      };
-    }
-
-    // ── Tab switching ──────────────────────────────────────────────────────────
-    document.querySelectorAll(".results-tab").forEach(tab => {
-      tab.addEventListener("click", () => {
-        document.querySelectorAll(".results-tab").forEach(t => t.classList.remove("active"));
-        document.querySelectorAll("#tab-objects, #tab-frames, #tab-cameras")
-                .forEach(p => p.classList.remove("active"));
-        tab.classList.add("active");
-        document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
-      });
-    });
-
-    // ── Depth / RGB toggle in Frames tab ──────────────────────────────────────
-    toggleRgb.addEventListener("click", () => {
-      showingDepth = false;
-      toggleRgb.classList.add("active");
-      toggleDepth.classList.remove("active");
-      renderFramesGrid(currentRgbUrls);
-    });
-    toggleDepth.addEventListener("click", () => {
-      if (!currentDepthUrls.length) return;
-      showingDepth = true;
-      toggleDepth.classList.add("active");
-      toggleRgb.classList.remove("active");
-      renderFramesGrid(currentDepthUrls);
-    });
-
-    function renderFramesGrid(urls) {
-      framesGrid.innerHTML = "";
-      urls.forEach((url, i) => {
-        const img = document.createElement("img");
-        img.className = "frame-thumb";
-        img.src = API + url;
-        img.loading = "lazy";
-        img.title = `Frame ${i + 1}`;
-        img.addEventListener("click", () => {
-          lightboxUrls = urls;
-          openLightbox(i);
-        });
-        framesGrid.appendChild(img);
-      });
-    }
-
-    // ── Canvas box overlay ────────────────────────────────────────────────────
-    function drawLightboxBoxes() {
-      const ctx = lightboxCanvas.getContext("2d");
-      // Images are always rendered at 512×512; use that as the canvas resolution
-      lightboxCanvas.width  = 512;
-      lightboxCanvas.height = 512;
-      ctx.clearRect(0, 0, 512, 512);
-
-      if (!lightboxAnnotMap) return;
-      const url = API + lightboxUrls[lightboxIdx];
-      const annots = lightboxAnnotMap[url];
-      if (!annots || !annots.length) return;
-
-      for (const det of annots) {
-        const [x1, y1, x2, y2] = det.box;
-        const color = labelColour(det.label);
-
-        // Box outline
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-
-        // Label pill
-        const txt = `${det.label}  ${Math.round(det.score * 100)}%`;
-        ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, sans-serif";
-        const tw = ctx.measureText(txt).width;
-        const lh = 18;
-        const lx = x1, ly = Math.max(y1 - lh, 0);
-        ctx.fillStyle = "rgba(13,17,23,0.82)";
-        ctx.fillRect(lx, ly, tw + 8, lh);
-        ctx.fillStyle = color;
-        ctx.fillText(txt, lx + 4, ly + lh - 4);
-      }
-    }
-
-    // ── Lightbox ───────────────────────────────────────────────────────────────
-    function openLightbox(idx) {
-      lightboxIdx = ((idx % lightboxUrls.length) + lightboxUrls.length) % lightboxUrls.length;
-      lightboxImg.src = API + lightboxUrls[lightboxIdx];
-      lbIndex.textContent = `${lightboxIdx + 1} / ${lightboxUrls.length}`;
-      lightbox.classList.add("open");
-      // Draw once image loads (and immediately if already cached)
-      lightboxImg.onload = drawLightboxBoxes;
-      if (lightboxImg.complete && lightboxImg.naturalWidth > 0) drawLightboxBoxes();
-    }
-    // Open lightbox showing the frames where a specific object was detected,
-    // with 2D box annotations overlaid.
-    function openObjectFrames(obj) {
-      if (!obj.frames || !obj.frames.length) return;
-      lightboxUrls    = obj.frames.map(f =>
-        `/jobs/${currentJobId}/frames/frame_${String(f.frame_idx).padStart(4, "0")}.png`
-      );
-      lightboxAnnotMap = {};
-      obj.frames.forEach((f, i) => {
-        const url = API + lightboxUrls[i];
-        lightboxAnnotMap[url] = frameAnnotationsData[String(f.frame_idx)] || [];
-      });
-      openLightbox(0);
-    }
-
-    function closeLightbox() {
-      lightbox.classList.remove("open");
-      lightboxAnnotMap = null;
-      const ctx = lightboxCanvas.getContext("2d");
-      ctx.clearRect(0, 0, lightboxCanvas.width, lightboxCanvas.height);
-    }
-
-    document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
-    lightbox.addEventListener("click", (e) => {
-      if (e.target === lightbox) closeLightbox();
-    });
-    document.getElementById("lb-prev").addEventListener("click",
-      () => openLightbox(lightboxIdx - 1));
-    document.getElementById("lb-next").addEventListener("click",
-      () => openLightbox(lightboxIdx + 1));
-    document.addEventListener("keydown", (e) => {
-      if (!lightbox.classList.contains("open")) return;
-      if (e.key === "ArrowLeft")  openLightbox(lightboxIdx - 1);
-      if (e.key === "ArrowRight") openLightbox(lightboxIdx + 1);
-      if (e.key === "Escape")     closeLightbox();
-    });
-
-    // ─── Helpers ─────────────────────────────────────────────────────────────
-    const setStatus   = (msg) => { statusBar.textContent = msg; };
-    const showLoad    = (msg) => { loadingMsg.textContent = msg; loadingEl.classList.remove("hidden"); };
-    const hideLoad    = ()    => { loadingEl.classList.add("hidden"); };
-    const setProgress = (pct) => { progressFill.style.width = pct + "%"; };
-
-    // ─── Teleport camera to a 3DGS camera position ───────────────────────────
-    // 3DGS uses OpenCV convention (Y-down, Z-forward).
-    // The splat mesh has rotation.x = Math.PI applied, which flips Y→-Y and Z→-Z.
-    // We apply the same transform to camera positions and orientations.
-    function teleportToCamera(group) {
-      const [cx, cy, cz] = group.position;
-      // Flip Y and Z to match the rotated splat coordinate space
-      camera.position.set(cx, -cy, -cz);
-
-      // Extract forward direction from the first frame's c2w matrix
-      // c2w column 2 = camera Z (forward into scene) in 3DGS world space
-      const m = group.first_transform;
-      // m[row][col], column 2: [m[0][2], m[1][2], m[2][2]]
-      const lookX = cx + m[0][2];
-      const lookY = -cy - m[1][2];
-      const lookZ = -cz - m[2][2];
-      camera.lookAt(lookX, lookY, lookZ);
-      camEuler.setFromQuaternion(camera.quaternion, "YXZ");
-
-      setStatus(`Teleported to ${group.label} — drag to look, WASD to move`);
-    }
-
-    // ─── Clear scene ─────────────────────────────────────────────────────────
-    function clearBoxes() {
-      boxGroup.clear();
-      resultsList.innerHTML   = "";
-      framesGrid.innerHTML    = "";
-      camerasList.innerHTML   = "";
-      resultsCount.textContent  = "0";
-      framesCount.textContent   = "0";
-      camerasCount.textContent  = "0";
-      currentRgbUrls    = [];
-      currentDepthUrls  = [];
-      cameraGroupsData     = [];
-      frameAnnotationsData = {};
-      objectMeshes         = [];
-      currentDetections    = [];
-      currentJobId         = null;
-      toggleAllBtn.textContent = "Hide All";
-      dlJsonBtn.disabled   = true;
-      dlFramesBtn.disabled = true;
-      resultsPanel.classList.remove("open");
-    }
-
-    // ─── Load splat ───────────────────────────────────────────────────────────
-    async function loadSplat(file) {
-      if (currentSplat) { scene.remove(currentSplat); currentSplat = null; }
-      clearBoxes();
-      showLoad(`Loading ${file.name}…`);
-      setStatus(`Reading ${file.name}…`);
-
-      const bytes = await file.arrayBuffer();
-
-      currentSplat = new SplatMesh({
-        fileBytes: bytes,
-        fileName:  file.name,
-        onLoad: async (mesh) => {
-          // Flip 180° around X: converts 3DGS OpenCV (Y-down) → Three.js (Y-up)
-          mesh.rotation.x = Math.PI;
-          hideLoad();
-          const mb = (file.size / 1048576).toFixed(1);
-          setStatus(`${file.name} — ${mb} MB  ·  Drag to look  ·  WASD to move  ·  Analyze to detect`);
-
-          try {
-            const box = new THREE.Box3().setFromObject(mesh);
-            if (!box.isEmpty()) {
-              const center = box.getCenter(new THREE.Vector3());
-              const size   = box.getSize(new THREE.Vector3());
-              const maxDim = Math.max(size.x, size.y, size.z);
-              // Set move speed proportional to scene size
-              moveSpeed = maxDim * 0.008;
-              camera.position.copy(center).addScaledVector(
-                new THREE.Vector3(0.2, 0.3, 1).normalize(), maxDim * 2
-              );
-              camera.lookAt(center);
-              camEuler.setFromQuaternion(camera.quaternion, "YXZ");
-            }
-          } catch (_) { /* SplatMesh may not have geometry bounds immediately */ }
-        },
-      });
-
-      scene.add(currentSplat);
-    }
-
-    // ─── Build camera list UI ─────────────────────────────────────────────────
-    function buildCamerasList(groups) {
-      camerasList.innerHTML = "";
-      camerasCount.textContent = String(groups.length);
-      if (!groups.length) return;
-
-      groups.forEach((group) => {
-        const [px, py, pz] = group.position;
-        const item = document.createElement("div");
-        item.className = "camera-item";
-
-        item.innerHTML = `
-          <div class="camera-header">
-            <div class="camera-icon">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-                   stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M23 7l-7 5 7 5V7z"/>
-                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-              </svg>
-            </div>
-            <span class="camera-name">${group.label}</span>
-          </div>
-          <div class="camera-pos">
-            x: ${px.toFixed(3)}&nbsp;&nbsp;y: ${py.toFixed(3)}&nbsp;&nbsp;z: ${pz.toFixed(3)}
-          </div>
-          <div class="camera-thumb-row">
-            <img class="camera-thumb" src="${API}${group.first_frame_url}" loading="lazy"
-                 title="First frame from ${group.label}">
-            <div class="camera-btns">
-              <button class="cam-btn teleport">Go here →</button>
-              <button class="cam-btn depth-btn">Depth</button>
-            </div>
-          </div>`;
-
-        // Teleport on "Go here"
-        item.querySelector(".teleport").addEventListener("click", (e) => {
-          e.stopPropagation();
-          teleportToCamera(group);
-        });
-
-        // Show depth image in lightbox
-        item.querySelector(".depth-btn").addEventListener("click", (e) => {
-          e.stopPropagation();
-          // Build depth URLs for all frames of this camera
-          lightboxUrls = group.frame_indices.map(i =>
-            `/jobs/${currentJobId}/frames/depth_${String(i).padStart(4, "0")}.png`
-          );
-          openLightbox(0);
-        });
-
-        // Click the thumbnail → show RGB frames for this camera in lightbox
-        item.querySelector(".camera-thumb").addEventListener("click", (e) => {
-          e.stopPropagation();
-          lightboxUrls = group.frame_indices.map(i =>
-            `/jobs/${currentJobId}/frames/frame_${String(i).padStart(4, "0")}.png`
-          );
-          openLightbox(0);
-        });
-
-        camerasList.appendChild(item);
-      });
-    }
-
-    // ─── Add bounding boxes + populate panels ────────────────────────────────
-    function addBoxes(interactions, frameUrls, depthUrls, groups, frameAnnots) {
-      clearBoxes();
-      currentJobId         = interactions._jobId;
-      currentDetections    = interactions.filter(i => typeof i === "object" && i.label);
-      currentRgbUrls       = frameUrls;
-      currentDepthUrls     = depthUrls;
-      cameraGroupsData     = groups;
-      frameAnnotationsData = frameAnnots || {};
-
-      // Frames tab
-      if (frameUrls.length) {
-        framesCount.textContent = String(frameUrls.length);
-        if (depthUrls.length) {
-          toggleDepth.style.opacity = "1";
-          toggleDepth.style.pointerEvents = "auto";
-        } else {
-          toggleDepth.style.opacity = "0.4";
-          toggleDepth.style.pointerEvents = "none";
-        }
-        showingDepth = false;
-        toggleRgb.classList.add("active");
-        toggleDepth.classList.remove("active");
-        renderFramesGrid(frameUrls);
+      let phase = "pending";
+      while (true) {
+        await sleep(3500);
+        const sr = await fetch(`/api/v1/jobs/${job_id}/status`, { headers: { "X-API-Key": key } });
+        if (!sr.ok) throw new Error("Status check failed");
+        const { status } = await sr.json();
+        phase = status;
+        if (status === "done") break;
+        if (status === "failed") throw new Error("Detection pipeline failed on server.");
+        progressMsg.textContent = status === "running"
+          ? "Rendering + detecting objects (~2-3 min)…"
+          : "Starting pipeline…";
       }
 
-      // Cameras tab
-      buildCamerasList(groups);
+      stopTicker();
+      showProgress("Loading results…", 96);
 
-      if (!interactions.length) {
-        setStatus("No objects found — try adjusting your prompt.");
-        resultsPanel.classList.add("open");
-        return;
-      }
+      // 3. Fetch result
+      const rr = await fetch(`/api/v1/jobs/${job_id}/result`, { headers: { "X-API-Key": key } });
+      if (!rr.ok) throw new Error("Failed to fetch result");
+      const data = await rr.json();
+      lastObjects = data.objects || [];
 
-      // Objects tab
-      interactions.forEach((item) => {
-        const col = new THREE.Color(labelColour(item.label));
-        const hex = labelColour(item.label);
+      progressFill.style.width = "100%";
+      await sleep(300);
+      hideProgress();
+      showResults(lastObjects, job_id, key);
 
-        const px =  item.position.x;
-        const py = -item.position.y;
-        const pz = -item.position.z;
+    } catch (err) {
+      stopTicker();
+      hideProgress();
+      showError(err.message);
+      console.error(err);
+    } finally {
+      runBtn.disabled = false;
+      runBtn.classList.remove("loading");
+      runBtn.textContent = "Run Detection →";
+    }
+  });
 
-        const { x: sx, y: sy, z: sz } = item.scale;
-        const { x: rx, y: ry, z: rz, w: rw } = item.rotation;
-        const quat = new THREE.Quaternion(rx, -ry, -rz, rw);
+  function showResults(objects, jobId, key) {
+    objectsList.innerHTML = "";
+    objCount.textContent = String(objects.length);
 
-        const edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(sx, sy, sz));
-        const lineGeo  = new LineSegmentsGeometry();
-        lineGeo.setPositions(edgesGeo.attributes.position.array);
-        const lineMat = new LineMaterial({
-          color: col, linewidth: currentLineWidth,
-          resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
-        });
-        const lines = new LineSegments2(lineGeo, lineMat);
-        lines.position.set(px, py, pz);
-        lines.quaternion.copy(quat);
-        boxGroup.add(lines);
-
-        const fill = new THREE.Mesh(
-          new THREE.BoxGeometry(sx, sy, sz),
-          new THREE.MeshBasicMaterial({
-            color: col, transparent: true, opacity: 0.06,
-            side: THREE.DoubleSide, depthWrite: false,
-          })
-        );
-        fill.position.set(px, py, pz);
-        fill.quaternion.copy(quat);
-        boxGroup.add(fill);
-
+    if (!objects.length) {
+      objectsList.innerHTML = '<div style="padding:20px;text-align:center;color:#6e7681;font-size:13px;">No objects found — try adjusting your class labels.</div>';
+    } else {
+      objects.forEach((obj) => {
+        const col = labelColour(obj.label);
+        const { x, y, z } = obj.position;
+        const s = obj.size;
         const div = document.createElement("div");
-        div.className = "bbox-label";
-        div.textContent = item.label;
-        div.style.color = hex;
-        div.style.borderColor = hex + "55";
-        const label2d = new CSS2DObject(div);
-        label2d.position.set(px, py + sy / 2 + 0.12, pz);
-        boxGroup.add(label2d);
-
-        // Register meshes for toggling
-        const objIdx = objectMeshes.length;
-        objectMeshes.push({ meshes: [lines, fill, label2d], lineMat, visible: true, dot: null });
-
-        const row = document.createElement("div");
-        row.className = "result-item";
-        const frameCount = item.frames ? item.frames.length : 0;
-        row.innerHTML = `
-          <div class="result-dot" style="background:${hex};box-shadow:0 0 6px ${hex};" title="Toggle visibility"></div>
-          <div class="result-info">
-            <div class="result-label">${item.label}</div>
-            <div class="result-pos">${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)}</div>
-            ${frameCount ? `<button class="result-frames-btn">${frameCount} frames ›</button>` : ""}
+        div.className = "obj-row";
+        div.innerHTML = `
+          <div class="obj-dot" style="background:${col};color:${col}"></div>
+          <div class="obj-info">
+            <div class="obj-label" style="color:${col}">${obj.label}</div>
+            <div class="obj-pos">x:${x.toFixed(2)} y:${y.toFixed(2)} z:${z.toFixed(2)}</div>
           </div>
-          <button class="result-eye-btn" title="Focus camera on this object">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-            </svg>
-          </button>`;
-
-        const dot = row.querySelector(".result-dot");
-        objectMeshes[objIdx].dot = dot;
-        dot.addEventListener("click", (e) => { e.stopPropagation(); toggleObject(objIdx); });
-
-        row.querySelector(".result-eye-btn").addEventListener("click", (e) => {
-          e.stopPropagation();
-          flyToObject(px, py, pz, sx, sy, sz);
-        });
-
-        if (frameCount) {
-          row.querySelector(".result-frames-btn").addEventListener("click", (e) => {
-            e.stopPropagation();
-            openObjectFrames(item);
-          });
-        }
-        resultsList.appendChild(row);
+          <div class="obj-size">${s.x.toFixed(2)}×${s.y.toFixed(2)}×${s.z.toFixed(2)} m</div>`;
+        objectsList.appendChild(div);
       });
-
-      resultsCount.textContent = String(interactions.length);
-      resultsPanel.classList.add("open");
-      setStatus(`Found ${interactions.length} object${interactions.length !== 1 ? "s" : ""}` +
-                ` — ${groups.length} camera positions used`);
-      dlJsonBtn.disabled   = false;
-      dlFramesBtn.disabled = false;
     }
 
-    // ─── Analyse ─────────────────────────────────────────────────────────────
-    async function analyse() {
-      if (!loadedFile || analysing) return;
-      analysing = true;
-      analyzeBtn.disabled = true;
-      analyzeBtn.classList.add("loading");
-      analyzeBtn.textContent = "Analysing…";
-      clearBoxes();
-      setProgress(0);
+    debugLink.href = `/debug#job=${jobId}&key=${encodeURIComponent(key)}`;
+    resultsCard.classList.add("show");
+  }
 
-      let pct = 5;
-      const ticker = setInterval(() => {
-        pct = Math.min(pct + (95 - pct) * 0.03, 90);
-        setProgress(pct);
-      }, 800);
-
-      setStatus("Uploading & processing on server — ~2–3 min with multi-position cameras…");
-
-      try {
-        const form = new FormData();
-        form.append("file",   loadedFile);
-        form.append("prompt", promptInput.value);
-
-        const t0  = Date.now();
-        const res = await fetch(`${API}/generate_interactions`, { method: "POST", body: form });
-
-        if (!res.ok) {
-          const err = await res.text();
-          throw new Error(`Server error ${res.status}: ${err.slice(0, 200)}`);
-        }
-
-        const data = await res.json();
-        console.log("[SplatAnalyzer] raw response:", JSON.stringify(data, null, 2));
-
-        const interactions  = Array.isArray(data) ? data  : (data.objects            ?? []);
-        const frameUrls     = Array.isArray(data) ? []    : (data.frames             ?? []);
-        const depthUrls     = Array.isArray(data) ? []    : (data.depth_frames       ?? []);
-        const groups        = Array.isArray(data) ? []    : (data.camera_groups      ?? []);
-        const frameAnnots   = Array.isArray(data) ? {}    : (data.frame_annotations  ?? {});
-        const jobId         = Array.isArray(data) ? null  : (data.job_id             ?? null);
-        const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-
-        clearInterval(ticker);
-        setProgress(100);
-        setTimeout(() => setProgress(0), 800);
-
-        // Stash job_id on the array so addBoxes can use it
-        interactions._jobId = jobId;
-        currentJobId = jobId;
-
-        addBoxes(interactions, frameUrls, depthUrls, groups, frameAnnots);
-        setStatus(`Done in ${elapsed}s — ${interactions.length} object${interactions.length !== 1 ? "s" : ""} · ${groups.length} cameras`);
-      } catch (err) {
-        clearInterval(ticker);
-        setProgress(0);
-        setStatus(`Error: ${err.message}`);
-        console.error(err);
-      } finally {
-        analysing = false;
-        analyzeBtn.disabled = false;
-        analyzeBtn.classList.remove("loading");
-        analyzeBtn.textContent = "Analyze →";
-      }
-    }
-
-    // ─── File handling ────────────────────────────────────────────────────────
-    async function handleFile(file) {
-      if (!file) return;
-      loadedFile = file;
-      filenameEl.textContent = file.name;
-      analyzeBtn.disabled = false;
-      await loadSplat(file);
-    }
-
-    fileInput.addEventListener("change", (e) => handleFile(e.target.files[0]));
-    analyzeBtn.addEventListener("click", analyse);
-
-    document.addEventListener("dragover",  (e) => { e.preventDefault(); dropOverlay.classList.add("visible"); });
-    document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) dropOverlay.classList.remove("visible"); });
-    document.addEventListener("drop", (e) => {
-      e.preventDefault();
-      dropOverlay.classList.remove("visible");
-      const file = e.dataTransfer?.files[0];
-      if (file) handleFile(file);
+  dlJsonBtn.addEventListener("click", () => {
+    if (!lastObjects.length && !lastJobId) return;
+    const payload = { job_id: lastJobId, objects: lastObjects };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const a = Object.assign(document.createElement("a"), {
+      href: URL.createObjectURL(blob), download: "detections.json",
     });
-
-    hideLoad();
-    setStatus("Drop a .ply file or click Open Splat");
-  </script>
+    a.click(); URL.revokeObjectURL(a.href);
+  });
+</script>
 </body>
 </html>
