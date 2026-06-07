@@ -416,6 +416,107 @@ async def revoke_key(key_id: int, admin: str = Depends(require_admin)):
     return {"ok": True, "id": key_id}
 
 
+# ── Stats helpers (no external deps — uses /proc + nvidia-smi) ────────────────
+def _cpu_sample():
+    with open("/proc/stat") as f:
+        parts = f.readline().split()
+    vals = [int(x) for x in parts[1:8]]
+    idle = vals[3] + vals[4]  # idle + iowait
+    return idle, sum(vals)
+
+def _cpu_percent_sync() -> float:
+    try:
+        i1, t1 = _cpu_sample()
+        time.sleep(0.2)
+        i2, t2 = _cpu_sample()
+        dt = t2 - t1
+        return round((1.0 - (i2 - i1) / dt) * 100, 1) if dt else 0.0
+    except Exception:
+        return 0.0
+
+def _memory_stats() -> dict:
+    try:
+        info: dict[str, int] = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2:
+                    info[parts[0].rstrip(":")] = int(parts[1]) * 1024
+        total = info.get("MemTotal", 0)
+        used  = total - info.get("MemAvailable", 0)
+        return {
+            "total_gb": round(total / 1_073_741_824, 1),
+            "used_gb":  round(used  / 1_073_741_824, 1),
+            "percent":  round(used / total * 100, 1) if total else 0.0,
+        }
+    except Exception:
+        return {"total_gb": 0, "used_gb": 0, "percent": 0.0}
+
+def _disk_stats() -> dict:
+    try:
+        st = os.statvfs("/")
+        total = st.f_blocks * st.f_frsize
+        free  = st.f_bavail * st.f_frsize
+        used  = total - free
+        return {
+            "total_gb": round(total / 1_073_741_824, 1),
+            "used_gb":  round(used  / 1_073_741_824, 1),
+            "percent":  round(used / total * 100, 1) if total else 0.0,
+        }
+    except Exception:
+        return {"total_gb": 0, "used_gb": 0, "percent": 0.0}
+
+def _gpu_stats() -> list:
+    try:
+        import subprocess as _sp
+        r = _sp.run(
+            ["nvidia-smi",
+             "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode != 0:
+            return []
+        gpus = []
+        for line in r.stdout.strip().split("\n"):
+            if not line.strip():
+                continue
+            p = [x.strip() for x in line.split(",")]
+            if len(p) >= 5:
+                mu, mt = int(p[2]), int(p[3])
+                gpus.append({
+                    "name":            p[0],
+                    "utilization":     int(p[1]),
+                    "memory_used_mb":  mu,
+                    "memory_total_mb": mt,
+                    "memory_percent":  round(mu / mt * 100, 1) if mt else 0.0,
+                    "temperature":     int(p[4]),
+                })
+        return gpus
+    except Exception:
+        return []
+
+def _collect_stats() -> dict:
+    cpu_pct = _cpu_percent_sync()
+    return {
+        "cpu":    {"percent": cpu_pct},
+        "memory": _memory_stats(),
+        "disk":   _disk_stats(),
+        "gpus":   _gpu_stats(),
+        "jobs": {
+            "active": sum(1 for s in JOB_STATUS.values() if s in ("pending", "running")),
+            "total":  len(JOB_STATUS),
+        },
+    }
+
+
+@app.get("/api/v1/admin/stats", tags=["Admin"], summary="Live server statistics")
+async def admin_stats(admin: str = Depends(require_admin)):
+    """CPU, memory, disk, GPU utilisation and active job counts."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _collect_stats)
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 @app.get("/health", include_in_schema=False)
 def health():

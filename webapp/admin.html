@@ -21,42 +21,141 @@
       --success-bg: #dafbe1;
       --danger: #cf222e;
       --danger-bg: #ffebe9;
+      --warn: #9a6700;
       --radius: 8px;
       --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
     }
 
+    html, body {
+      height: 100%;
+    }
     body {
       background: var(--bg); color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 14px; line-height: 1.5;
-      min-height: 100vh; display: flex; flex-direction: column;
+      display: flex; flex-direction: column;
     }
 
+    /* ── Header ── */
     header {
+      flex-shrink: 0;
       background: var(--surface); border-bottom: 1px solid var(--border);
       height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 24px;
+      z-index: 10;
     }
     .logo { display: flex; align-items: center; gap: 8px; text-decoration: none; font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
     .logo svg { color: var(--accent); }
     .logo-tag { font-size: 11px; font-weight: 500; color: var(--text-secondary); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px; }
-    header nav { margin-left: auto; display: flex; gap: 4px; }
-    header nav a { padding: 5px 10px; border-radius: var(--radius); font-size: 13px; color: var(--text-secondary); text-decoration: none; transition: background 0.12s, color 0.12s; }
-    header nav a:hover { background: var(--bg); color: var(--text); }
+    header .hdr-nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+    header .hdr-nav a { padding: 5px 10px; border-radius: var(--radius); font-size: 13px; color: var(--text-secondary); text-decoration: none; transition: background 0.12s, color 0.12s; }
+    header .hdr-nav a:hover { background: var(--bg); color: var(--text); }
     #logout-btn { padding: 5px 12px; border-radius: var(--radius); font-size: 12px; font-weight: 500; background: var(--danger-bg); border: 1px solid rgba(207,34,46,0.3); color: var(--danger); cursor: pointer; transition: background 0.12s; display: none; }
     #logout-btn:hover { background: #ffd7d5; }
     #logout-btn.show { display: block; }
 
-    main { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 40px 20px 60px; gap: 20px; }
+    /* ── Login overlay ── */
+    #login-section {
+      flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 20px;
+    }
+    #login-section.hide { display: none; }
+    #login-box { width: 100%; max-width: 380px; }
 
-    /* ── Login card ── */
-    #login-section { width: 100%; max-width: 380px; }
+    /* ── App layout (sidebar + content) ── */
+    #app-layout { flex: 1; display: none; overflow: hidden; }
+    #app-layout.show { display: flex; }
 
+    #sidebar {
+      width: 196px; flex-shrink: 0;
+      background: var(--surface); border-right: 1px solid var(--border);
+      padding: 12px 8px; display: flex; flex-direction: column; gap: 2px;
+      overflow-y: auto;
+    }
+    .sidebar-label {
+      font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-muted); padding: 6px 10px 4px; user-select: none;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 9px;
+      width: 100%; padding: 7px 10px; border: none; border-radius: 6px;
+      background: transparent; color: var(--text-secondary); font-size: 13px;
+      cursor: pointer; text-align: left; transition: background 0.1s, color 0.1s;
+    }
+    .nav-item:hover { background: var(--bg); color: var(--text); }
+    .nav-item.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+    .nav-item svg { flex-shrink: 0; }
+
+    #content-area {
+      flex: 1; overflow-y: auto; padding: 28px 28px 48px;
+    }
+
+    /* ── View common ── */
+    .view-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+    .view-title { font-size: 20px; font-weight: 700; color: var(--text); }
+    .live-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border-radius: 12px;
+      background: var(--success-bg); border: 1px solid rgba(26,127,55,0.3);
+      font-size: 11px; font-weight: 600; color: var(--success);
+    }
+    .live-dot {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--success);
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.7); }
+    }
+
+    /* ── Stat cards grid ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 18px 16px;
+    }
+    .stat-title {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--text-secondary); margin-bottom: 8px;
+    }
+    .stat-value { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1.1; }
+    .stat-sub { font-size: 12px; color: var(--text-secondary); margin-top: 3px; margin-bottom: 14px; }
+    .stat-bar { height: 6px; background: var(--border-subtle); border-radius: 3px; overflow: hidden; }
+    .stat-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease, background 0.3s; }
+    .bar-green  { background: var(--success); }
+    .bar-yellow { background: #d4a72c; }
+    .bar-red    { background: var(--danger); }
+
+    /* ── GPU section ── */
+    .gpu-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden; margin-bottom: 14px;
+    }
+    .gpu-card-header {
+      padding: 14px 18px 12px; border-bottom: 1px solid var(--border-subtle);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .gpu-card-header h3 { font-size: 14px; font-weight: 600; }
+    .gpu-temp { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+    .gpu-card-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+    .gpu-row { display: flex; align-items: center; gap: 12px; }
+    .gpu-label { width: 84px; font-size: 12px; color: var(--text-secondary); flex-shrink: 0; }
+    .gpu-bar-wrap { flex: 1; }
+    .gpu-val { width: 120px; text-align: right; font-size: 12px; font-weight: 500; color: var(--text); flex-shrink: 0; }
+    .no-gpu { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+    /* ── Cards ── */
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
     .card-header { padding: 18px 22px 14px; border-bottom: 1px solid var(--border-subtle); }
     .card-header h2 { font-size: 16px; font-weight: 600; }
     .card-header p { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
     .card-body { padding: 20px 22px; }
+    .card-header-row { display: flex; align-items: center; justify-content: space-between; }
 
+    /* ── Forms ── */
     .form-field { margin-bottom: 14px; }
     .form-field label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; }
     .form-input {
@@ -74,10 +173,6 @@
 
     .error-msg { margin-top: 10px; padding: 9px 11px; background: var(--danger-bg); border: 1px solid rgba(207,34,46,0.3); border-radius: var(--radius); font-size: 12px; color: var(--danger); display: none; }
     .error-msg.show { display: block; }
-
-    /* ── Dashboard ── */
-    #dashboard-section { display: none; width: 100%; max-width: 800px; gap: 20px; flex-direction: column; }
-    #dashboard-section.show { display: flex; }
 
     /* ── Create key ── */
     .create-row { display: flex; gap: 8px; }
@@ -101,27 +196,14 @@
     #new-key-box.show { display: block; }
     .new-key-warn { font-size: 12px; color: #9a6700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; font-weight: 500; }
     .new-key-value { display: flex; align-items: center; gap: 8px; }
-    .new-key-text {
-      flex: 1; padding: 7px 10px; background: var(--surface);
-      border: 1px solid var(--border); border-radius: 6px;
-      font-family: "SF Mono","Fira Code",monospace; font-size: 12px;
-      color: var(--accent); word-break: break-all;
-    }
-    .btn-copy {
-      padding: 6px 12px; background: var(--surface); border: 1px solid var(--border);
-      border-radius: 6px; color: var(--text); font-size: 12px; cursor: pointer;
-      white-space: nowrap; transition: background 0.12s;
-    }
+    .new-key-text { flex: 1; padding: 7px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; font-family: "SF Mono","Fira Code",monospace; font-size: 12px; color: var(--accent); word-break: break-all; }
+    .btn-copy { padding: 6px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 12px; cursor: pointer; white-space: nowrap; transition: background 0.12s; }
     .btn-copy:hover { background: var(--bg); }
 
     /* ── Keys table ── */
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    thead th {
-      padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary);
-      border-bottom: 1px solid var(--border); background: var(--bg);
-    }
+    thead th { padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); border-bottom: 1px solid var(--border); background: var(--bg); }
     tbody tr { border-bottom: 1px solid var(--border-subtle); transition: background 0.1s; }
     tbody tr:last-child { border-bottom: none; }
     tbody tr:hover { background: var(--bg); }
@@ -130,11 +212,7 @@
     .badge-active { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; background: var(--success-bg); border: 1px solid rgba(26,127,55,0.3); color: var(--success); }
     .badge-revoked { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); }
     .ts { font-size: 11px; color: var(--text-muted); font-family: "SF Mono","Fira Code",monospace; }
-    .btn-revoke {
-      padding: 4px 10px; background: transparent; border: 1px solid rgba(207,34,46,0.3);
-      border-radius: 5px; color: var(--danger); font-size: 11px; cursor: pointer;
-      transition: background 0.12s, border-color 0.12s;
-    }
+    .btn-revoke { padding: 4px 10px; background: transparent; border: 1px solid rgba(207,34,46,0.3); border-radius: 5px; color: var(--danger); font-size: 11px; cursor: pointer; transition: background 0.12s, border-color 0.12s; }
     .btn-revoke:hover { background: var(--danger-bg); border-color: var(--danger); }
     .btn-revoke:disabled { opacity: 0.3; cursor: not-allowed; }
     .empty-state { padding: 32px; text-align: center; color: var(--text-muted); font-size: 13px; }
@@ -142,13 +220,7 @@
     .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.75s linear infinite; display: inline-block; vertical-align: middle; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .card-header-row { display: flex; align-items: center; justify-content: space-between; }
-    .btn-sm {
-      display: flex; align-items: center; gap: 5px;
-      padding: 5px 10px; background: var(--surface); border: 1px solid var(--border);
-      border-radius: 6px; color: var(--text-secondary); font-size: 12px;
-      cursor: pointer; transition: background 0.12s;
-    }
+    .btn-sm { display: flex; align-items: center; gap: 5px; padding: 5px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: background 0.12s; }
     .btn-sm:hover { background: var(--bg); color: var(--text); }
   </style>
 </head>
@@ -164,20 +236,21 @@
     Splat Analyzer
   </a>
   <span class="logo-tag">Admin</span>
-  <nav>
+  <nav class="hdr-nav">
     <a href="/">Home</a>
     <a href="/debug">3D Viewer</a>
     <a href="/docs">API</a>
+    <button id="logout-btn">Sign out</button>
   </nav>
-  <button id="logout-btn">Sign out</button>
 </header>
 
-<main>
-  <div id="login-section">
+<!-- Login (shown when not authenticated) -->
+<div id="login-section">
+  <div id="login-box">
     <div class="card">
       <div class="card-header">
         <h2>Admin Login</h2>
-        <p>Manage API keys for your Splat Analyzer instance.</p>
+        <p>Manage API keys and monitor your Splat Analyzer instance.</p>
       </div>
       <div class="card-body">
         <form id="login-form">
@@ -195,69 +268,117 @@
       </div>
     </div>
   </div>
+</div>
 
-  <div id="dashboard-section">
+<!-- App shell (visible when authenticated) -->
+<div id="app-layout">
 
-    <div class="card">
-      <div class="card-header">
-        <h2>Create API Key</h2>
-        <p>Keys are prefixed <code style="font-size:11px;font-family:monospace;color:var(--accent)">wmd_</code> and shown only once on creation.</p>
+  <aside id="sidebar">
+    <div class="sidebar-label">Overview</div>
+    <button class="nav-item active" data-view="dashboard" id="nav-dashboard">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2"/>
+        <path d="M8 21h8M12 17v4"/>
+      </svg>
+      Dashboard
+    </button>
+    <div class="sidebar-label" style="margin-top:8px">Management</div>
+    <button class="nav-item" data-view="apikeys" id="nav-apikeys">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="7.5" cy="15.5" r="5.5"/>
+        <path d="M21 2l-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>
+      </svg>
+      API Keys
+    </button>
+  </aside>
+
+  <div id="content-area">
+
+    <!-- ── Dashboard view ── -->
+    <div id="view-dashboard">
+      <div class="view-title-row">
+        <span class="view-title">Dashboard</span>
+        <span class="live-badge"><span class="live-dot"></span>Live</span>
       </div>
-      <div class="card-body">
-        <div class="create-row">
-          <input type="text" id="new-key-label" placeholder="Label — e.g. Student 1, Workshop A" maxlength="80">
-          <button class="btn-create" id="create-key-btn">Create Key</button>
-        </div>
-        <div id="new-key-box">
-          <div class="new-key-warn">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0114.082 15H1.918a1.75 1.75 0 01-1.543-2.575zM8 5a.75.75 0 01.75.75v2.5a.75.75 0 01-1.5 0v-2.5A.75.75 0 018 5zm1 6a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
-            Copy this key now — it cannot be retrieved after closing this box.
-          </div>
-          <div class="new-key-value">
-            <span class="new-key-text" id="new-key-text"></span>
-            <button class="btn-copy" id="copy-key-btn">Copy</button>
-          </div>
-        </div>
+
+      <div class="stats-grid" id="stats-grid">
+        <!-- placeholder while loading -->
+        <div class="stat-card"><div class="stat-title">CPU</div><div style="color:var(--text-muted);font-size:13px">Loading…</div></div>
+        <div class="stat-card"><div class="stat-title">Memory</div><div style="color:var(--text-muted);font-size:13px">Loading…</div></div>
+        <div class="stat-card"><div class="stat-title">Disk</div><div style="color:var(--text-muted);font-size:13px">Loading…</div></div>
+        <div class="stat-card"><div class="stat-title">Jobs</div><div style="color:var(--text-muted);font-size:13px">Loading…</div></div>
       </div>
+
+      <div id="gpu-section"></div>
     </div>
 
-    <div class="card">
-      <div class="card-header card-header-row">
-        <div>
-          <h2>API Keys</h2>
-          <p>All keys for this instance.</p>
-        </div>
-        <button class="btn-sm" id="refresh-btn">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          Refresh
-        </button>
+    <!-- ── API Keys view ── -->
+    <div id="view-apikeys" style="display:none">
+      <div class="view-title-row">
+        <span class="view-title">API Keys</span>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Label</th>
-              <th>Key preview</th>
-              <th>Created</th>
-              <th>Last used</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="keys-tbody">
-            <tr><td colspan="7" class="empty-state"><span class="spinner"></span></td></tr>
-          </tbody>
-        </table>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <h2>Create API Key</h2>
+          <p>Keys are prefixed <code style="font-size:11px;font-family:monospace;color:var(--accent)">wmd_</code> and shown only once on creation.</p>
+        </div>
+        <div class="card-body">
+          <div class="create-row">
+            <input type="text" id="new-key-label" placeholder="Label — e.g. Student 1, Workshop A" maxlength="80">
+            <button class="btn-create" id="create-key-btn">Create Key</button>
+          </div>
+          <div id="new-key-box">
+            <div class="new-key-warn">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0114.082 15H1.918a1.75 1.75 0 01-1.543-2.575zM8 5a.75.75 0 01.75.75v2.5a.75.75 0 01-1.5 0v-2.5A.75.75 0 018 5zm1 6a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
+              Copy this key now — it cannot be retrieved after closing this box.
+            </div>
+            <div class="new-key-value">
+              <span class="new-key-text" id="new-key-text"></span>
+              <button class="btn-copy" id="copy-key-btn">Copy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header card-header-row">
+          <div>
+            <h2>API Keys</h2>
+            <p>All keys for this instance.</p>
+          </div>
+          <button class="btn-sm" id="refresh-btn">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Refresh
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Label</th>
+                <th>Key preview</th>
+                <th>Created</th>
+                <th>Last used</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="keys-tbody">
+              <tr><td colspan="7" class="empty-state"><span class="spinner"></span></td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
   </div>
-</main>
+</div>
 
 <script>
   const loginSection  = document.getElementById("login-section");
-  const dashSection   = document.getElementById("dashboard-section");
+  const appLayout     = document.getElementById("app-layout");
   const loginForm     = document.getElementById("login-form");
   const loginBtn      = document.getElementById("login-btn");
   const loginError    = document.getElementById("login-error");
@@ -269,23 +390,53 @@
   const copyKeyBtn    = document.getElementById("copy-key-btn");
   const keysTbody     = document.getElementById("keys-tbody");
   const refreshBtn    = document.getElementById("refresh-btn");
+  const statsGrid     = document.getElementById("stats-grid");
+  const gpuSection    = document.getElementById("gpu-section");
 
   function getToken() { return sessionStorage.getItem("admin_token") || ""; }
   function authHdr()  { return { "Content-Type": "application/json", "Authorization": "Bearer " + getToken() }; }
 
-  function showDashboard() {
-    loginSection.style.display = "none";
-    dashSection.classList.add("show");
-    logoutBtn.classList.add("show");
+  // ── View switching ──────────────────────────────────────────────────────────
+  let statsTimer = null;
+
+  function showView(name) {
+    document.getElementById("view-dashboard").style.display = name === "dashboard" ? "" : "none";
+    document.getElementById("view-apikeys").style.display   = name === "apikeys"   ? "" : "none";
+    document.querySelectorAll(".nav-item").forEach(el => {
+      el.classList.toggle("active", el.dataset.view === name);
+    });
+    if (name === "dashboard") {
+      loadStats();
+      if (!statsTimer) statsTimer = setInterval(loadStats, 3000);
+    } else {
+      clearInterval(statsTimer);
+      statsTimer = null;
+      if (name === "apikeys") loadKeys();
+    }
   }
+
+  document.querySelectorAll(".nav-item").forEach(btn => {
+    btn.addEventListener("click", () => showView(btn.dataset.view));
+  });
+
+  // ── Auth ────────────────────────────────────────────────────────────────────
+  function showApp() {
+    loginSection.classList.add("hide");
+    appLayout.classList.add("show");
+    logoutBtn.classList.add("show");
+    showView("dashboard");
+  }
+
   function showLogin() {
-    loginSection.style.display = "";
-    dashSection.classList.remove("show");
+    loginSection.classList.remove("hide");
+    appLayout.classList.remove("show");
     logoutBtn.classList.remove("show");
+    clearInterval(statsTimer);
+    statsTimer = null;
     newKeyBox.classList.remove("show");
   }
 
-  if (getToken()) { showDashboard(); loadKeys(); }
+  if (getToken()) showApp();
 
   loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -294,21 +445,97 @@
     try {
       const res = await fetch("/api/v1/admin/login", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: document.getElementById("username").value, password: document.getElementById("password").value }),
+        body: JSON.stringify({
+          username: document.getElementById("username").value,
+          password: document.getElementById("password").value,
+        }),
       });
-      if (!res.ok) { loginError.textContent = "Invalid username or password."; loginError.classList.add("show"); return; }
+      if (!res.ok) {
+        loginError.textContent = "Invalid username or password.";
+        loginError.classList.add("show");
+        return;
+      }
       const { token } = await res.json();
       sessionStorage.setItem("admin_token", token);
-      showDashboard(); loadKeys();
+      showApp();
     } catch (err) {
-      loginError.textContent = "Connection error: " + err.message; loginError.classList.add("show");
+      loginError.textContent = "Connection error: " + err.message;
+      loginError.classList.add("show");
     } finally {
       loginBtn.disabled = false; loginBtn.textContent = "Sign in";
     }
   });
 
-  logoutBtn.addEventListener("click", () => { sessionStorage.removeItem("admin_token"); showLogin(); });
+  logoutBtn.addEventListener("click", () => {
+    sessionStorage.removeItem("admin_token");
+    showLogin();
+  });
 
+  // ── Dashboard stats ─────────────────────────────────────────────────────────
+  function barColor(p) { return p > 80 ? "bar-red" : p > 60 ? "bar-yellow" : "bar-green"; }
+  function pct(v) { return Math.min(100, Math.max(0, v || 0)); }
+
+  function statCard(title, value, sub, percent, showBar) {
+    const bar = showBar
+      ? `<div class="stat-bar"><div class="stat-bar-fill ${barColor(percent)}" style="width:${pct(percent)}%"></div></div>`
+      : "";
+    return `<div class="stat-card">
+      <div class="stat-title">${title}</div>
+      <div class="stat-value">${value}</div>
+      <div class="stat-sub">${sub}</div>
+      ${bar}
+    </div>`;
+  }
+
+  function renderStats(s) {
+    statsGrid.innerHTML =
+      statCard("CPU Usage",      s.cpu.percent + "%",
+               "Utilization",    s.cpu.percent, true) +
+      statCard("Memory",          s.memory.used_gb + " GB",
+               "of " + s.memory.total_gb + " GB total",  s.memory.percent, true) +
+      statCard("Disk",            s.disk.used_gb + " GB",
+               "of " + s.disk.total_gb + " GB total",    s.disk.percent, true) +
+      statCard("Active Jobs",     s.jobs.active,
+               s.jobs.total + " jobs total",              0, false);
+
+    if (s.gpus && s.gpus.length) {
+      gpuSection.innerHTML = s.gpus.map((g, i) => `
+        <div class="gpu-card">
+          <div class="gpu-card-header">
+            <h3>GPU ${i} &nbsp;·&nbsp; ${escHtml(g.name)}</h3>
+            <span class="gpu-temp">${g.temperature}°C</span>
+          </div>
+          <div class="gpu-card-body">
+            <div class="gpu-row">
+              <span class="gpu-label">Utilization</span>
+              <div class="gpu-bar-wrap">
+                <div class="stat-bar"><div class="stat-bar-fill ${barColor(g.utilization)}" style="width:${pct(g.utilization)}%"></div></div>
+              </div>
+              <span class="gpu-val">${g.utilization}%</span>
+            </div>
+            <div class="gpu-row">
+              <span class="gpu-label">VRAM</span>
+              <div class="gpu-bar-wrap">
+                <div class="stat-bar"><div class="stat-bar-fill ${barColor(g.memory_percent)}" style="width:${pct(g.memory_percent)}%"></div></div>
+              </div>
+              <span class="gpu-val">${(g.memory_used_mb/1024).toFixed(1)} / ${(g.memory_total_mb/1024).toFixed(1)} GB &nbsp;(${g.memory_percent}%)</span>
+            </div>
+          </div>
+        </div>`).join("");
+    } else {
+      gpuSection.innerHTML = `<div class="gpu-card"><div class="no-gpu">No GPU detected</div></div>`;
+    }
+  }
+
+  async function loadStats() {
+    try {
+      const res = await fetch("/api/v1/admin/stats", { headers: authHdr() });
+      if (res.status === 401) { sessionStorage.removeItem("admin_token"); showLogin(); return; }
+      if (res.ok) renderStats(await res.json());
+    } catch (_) { /* ignore transient fetch errors */ }
+  }
+
+  // ── API Keys ────────────────────────────────────────────────────────────────
   async function loadKeys() {
     keysTbody.innerHTML = '<tr><td colspan="7" class="empty-state"><span class="spinner"></span></td></tr>';
     try {
@@ -327,7 +554,7 @@
     }
     keysTbody.innerHTML = "";
     keys.forEach((k) => {
-      const tr = document.createElement("tr");
+      const tr       = document.createElement("tr");
       const preview  = k.key.slice(0, 16) + "…";
       const created  = k.created_at ? k.created_at.replace("T"," ").replace("Z","") : "—";
       const lastUsed = k.last_used  ? k.last_used.replace("T"," ").replace("Z","") : "Never";
@@ -384,7 +611,10 @@
   }
 
   refreshBtn.addEventListener("click", loadKeys);
-  function escHtml(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
 </script>
 </body>
 </html>
