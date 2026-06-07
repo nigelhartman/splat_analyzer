@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 WORK_DIR = Path("/tmp/workshop_jobs")
-DB_PATH  = Path("keys.db")
+DB_PATH  = Path(os.getenv("DB_PATH", "keys.db"))
 JOB_TTL  = 3600
 
 ADMIN_USER     = os.getenv("ADMIN_USER", "admin")

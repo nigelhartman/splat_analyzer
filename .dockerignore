@@ -1,0 +1,13 @@
+*.ply
+*.npy
+*.png
+*.zip
+__pycache__
+.env
+*.egg-info
+.DS_Store
+Screenshot*
+keys.db
+deploy.sh
+.git
+.gitignore
