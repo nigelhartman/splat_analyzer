@@ -377,10 +377,9 @@
         <input type="range" id="intensity-slider" min="0.05" max="1" step="0.05" value="0.5">
         <span id="intensity-val">50%</span>
       </div>
-      <div class="settings-row" id="row-pointsize" style="display:none">
-        <label>Point size</label>
-        <input type="range" id="pointsize-slider" min="0.005" max="0.12" step="0.005" value="0.02">
-        <span id="pointsize-val">0.02</span>
+      <!-- point-size row kept in DOM for JS ref, hidden permanently -->
+      <div id="row-pointsize" style="display:none">
+        <input type="range" id="pointsize-slider" style="display:none">
       </div>
     </div>
     <div class="settings-section">
@@ -611,13 +610,14 @@
     let loadMode = "jobid";
 
     // ── Splat-highlight state ─────────────────────────────────────────────────
-    let splatRawBytes      = null;   // ArrayBuffer of the loaded PLY
-    let splatPositions     = null;   // Float32Array: world-space (x, -y, -z) per splat
-    let displayMode        = "bbox"; // "bbox" | "splat"
-    let splatIntensity     = 0.5;
-    let splatPointSize     = 0.02;
-    const splatHighlightGroup = new THREE.Group();
-    scene.add(splatHighlightGroup);
+    let splatRawBytes       = null;  // ArrayBuffer of the loaded PLY
+    let splatPositions      = null;  // Float32Array: world-space (x,-y,-z) per splat
+    let displayMode         = "bbox";
+    let splatIntensity      = 0.5;
+    let splatPackedSplats   = null;  // SparkJS PackedSplats ref (from currentSplat.packedSplats)
+    let splatOriginalColors = null;  // Map<splatIdx, [r,g,b]> — saved before any modification
+    let splatTargetColorMap = null;  // Map<splatIdx, THREE.Color> — desired highlight color per splat
+    const _blendColor = new THREE.Color();
 
     // ── UI refs ───────────────────────────────────────────────────────────────
     const fileInput     = document.getElementById("file-input");
@@ -683,12 +683,17 @@
     function setObjectVisible(idx, visible) {
       const e = objectMeshes[idx]; if (!e) return;
       e.visible = visible;
-      // bbox geometry (lines + fill) only shown in bbox mode
       if (e.meshes[0]) e.meshes[0].visible = (displayMode === "bbox") && visible;
       if (e.meshes[1]) e.meshes[1].visible = (displayMode === "bbox") && visible;
-      if (e.meshes[2]) e.meshes[2].visible = visible; // label always follows visibility
-      // highlight points only shown in splat mode
-      if (e.highlightPoints) e.highlightPoints.visible = (displayMode === "splat") && visible;
+      if (e.meshes[2]) e.meshes[2].visible = visible;
+      if (displayMode === "splat" && splatPackedSplats && e.splatIndices) {
+        if (visible) {
+          applyObjectHighlight(e);
+        } else {
+          restoreObjectColors(e);
+        }
+        splatPackedSplats.needsUpdate = true;
+      }
       e.dot.classList.toggle("off", !visible);
     }
     function toggleObject(idx) { if (objectMeshes[idx]) setObjectVisible(idx, !objectMeshes[idx].visible); updateToggleAllBtn(); }
@@ -727,13 +732,14 @@
     intensitySlider.addEventListener("input", () => {
       splatIntensity = parseFloat(intensitySlider.value);
       intensityVal.textContent = Math.round(splatIntensity * 100) + "%";
-      objectMeshes.forEach(e => { if (e.highlightPoints) e.highlightPoints.material.opacity = splatIntensity; });
+      // Re-apply blended colors with the new intensity
+      if (displayMode === "splat" && splatPackedSplats && splatOriginalColors) {
+        objectMeshes.forEach(e => { if (e.visible && e.splatIndices) applyObjectHighlight(e); });
+        splatPackedSplats.needsUpdate = true;
+      }
     });
-    pointsizeSlider.addEventListener("input", () => {
-      splatPointSize = parseFloat(pointsizeSlider.value);
-      pointsizeVal.textContent = splatPointSize.toFixed(3);
-      objectMeshes.forEach(e => { if (e.highlightPoints) e.highlightPoints.material.size = splatPointSize; });
-    });
+    // Point size slider no longer needed (no overlay points); keep ref to avoid errors
+    pointsizeSlider.addEventListener("input", () => {});
     dlJsonBtn.addEventListener("click", () => {
       if (!currentDetections.length) return;
       const blob = new Blob([JSON.stringify({ job_id: currentJobId, objects: currentDetections }, null, 2)], { type: "application/json" });
@@ -856,7 +862,13 @@
     }
 
     function clearBoxes() {
-      boxGroup.clear(); splatHighlightGroup.clear();
+      // Restore splat colors before wiping detection state
+      if (displayMode === "splat" && splatPackedSplats && splatOriginalColors) {
+        restoreAllSplatColors();
+        splatPackedSplats.needsUpdate = true;
+      }
+      splatOriginalColors = null; splatTargetColorMap = null;
+      boxGroup.clear();
       resultsList.innerHTML = ""; framesGrid.innerHTML = ""; camerasList.innerHTML = "";
       resultsCount.textContent = "0"; framesCount.textContent = "0"; camerasCount.textContent = "0";
       currentRgbUrls = []; currentDepthUrls = []; cameraGroupsData = [];
@@ -875,6 +887,7 @@
         fileBytes: new Uint8Array(bytes), fileName: file.name,
         onLoad: async (mesh) => {
           mesh.rotation.x = Math.PI;
+          splatPackedSplats = mesh.packedSplats || currentSplat?.packedSplats || null;
           hideLoad();
           try {
             const box = new THREE.Box3().setFromObject(mesh);
@@ -888,7 +901,6 @@
             }
           } catch (_) {}
           setStatus(`${file.name} — drag to look · WASD to move`);
-          // If already in splat mode, build highlights now that the splat is loaded
           if (displayMode === "splat") setSplatMode("splat");
         },
       });
@@ -1002,7 +1014,7 @@
 
         const objIdx = objectMeshes.length;
         objectMeshes.push({ meshes: [lines, fill, label2d], lineMat, visible: true, dot: null,
-                            highlightPoints: null, px, py, pz, sx, sy, sz, quat, colorHex: hex });
+                            splatIndices: null, px, py, pz, sx, sy, sz, quat, colorHex: hex });
 
         const row = document.createElement("div");
         row.className = "result-item";
@@ -1032,8 +1044,8 @@
       dlJsonBtn.disabled = false;
       dlFramesBtn.disabled = !jobId;
 
-      // If already in splat mode and we have splat data, rebuild highlights for new detections
-      if (displayMode === "splat" && splatPositions) buildAllHighlights();
+      // Re-apply splat highlights if active
+      if (displayMode === "splat" && splatPositions && splatPackedSplats) buildSplatHighlights();
     }
 
     // ── PLY parser — extracts world-space splat positions ─────────────────────
@@ -1084,62 +1096,105 @@
       }
     }
 
-    // ── Build ONE object's highlight point cloud ───────────────────────────────
-    const _v = new THREE.Vector3(); // reused to avoid GC
-    function buildObjectHighlight(entry) {
-      if (!splatPositions) return null;
-      const { px, py, pz, sx, sy, sz, quat, colorHex } = entry;
+    // ── OBB point test ────────────────────────────────────────────────────────
+    const _obv = new THREE.Vector3();
+    function findSplatIndicesInBox(entry) {
+      const { px, py, pz, sx, sy, sz, quat } = entry;
       const invQ = quat.clone().invert();
       const hx = sx / 2, hy = sy / 2, hz = sz / 2;
-      // Generous spherical early-reject: 2× half-diagonal squared
       const earlySq = (hx*hx + hy*hy + hz*hz) * 4;
-      const tmp = [];
-      const n   = splatPositions.length / 3;
+      const n = splatPositions.length / 3;
+      const indices = [];
       for (let i = 0; i < n; i++) {
-        const wx = splatPositions[i * 3], wy = splatPositions[i * 3 + 1], wz = splatPositions[i * 3 + 2];
-        const dx = wx - px, dy = wy - py, dz = wz - pz;
+        const dx = splatPositions[i*3]   - px;
+        const dy = splatPositions[i*3+1] - py;
+        const dz = splatPositions[i*3+2] - pz;
         if (dx*dx + dy*dy + dz*dz > earlySq) continue;
-        _v.set(dx, dy, dz).applyQuaternion(invQ);
-        if (Math.abs(_v.x) <= hx && Math.abs(_v.y) <= hy && Math.abs(_v.z) <= hz) {
-          tmp.push(wx, wy, wz);
+        _obv.set(dx, dy, dz).applyQuaternion(invQ);
+        if (Math.abs(_obv.x) <= hx && Math.abs(_obv.y) <= hy && Math.abs(_obv.z) <= hz) {
+          indices.push(i);
         }
       }
-      if (!tmp.length) return null;
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(tmp), 3));
-      const mat = new THREE.PointsMaterial({
-        color: new THREE.Color(colorHex),
-        size: splatPointSize,
-        sizeAttenuation: true,
-        transparent: true,
-        opacity: splatIntensity,
-        depthWrite: false,
-      });
-      return new THREE.Points(geo, mat);
+      return indices;
     }
 
-    // ── Build highlights for all objects (lazy, skips already-built ones) ──────
-    function buildAllHighlights() {
-      if (!splatPositions) return;
+    // ── Color helpers ─────────────────────────────────────────────────────────
+    function applyObjectHighlight(entry) {
+      if (!splatPackedSplats || !entry.splatIndices) return;
+      const tc = new THREE.Color(entry.colorHex);
+      for (const i of entry.splatIndices) {
+        const orig = splatOriginalColors.get(i);
+        if (!orig) continue;
+        _blendColor.setRGB(
+          orig[0] + (tc.r - orig[0]) * splatIntensity,
+          orig[1] + (tc.g - orig[1]) * splatIntensity,
+          orig[2] + (tc.b - orig[2]) * splatIntensity,
+        );
+        const s = splatPackedSplats.getSplat(i);
+        splatPackedSplats.setSplat(i, s.center, s.scales, s.quaternion, s.opacity, _blendColor);
+      }
+    }
+
+    function restoreObjectColors(entry) {
+      if (!splatPackedSplats || !entry.splatIndices) return;
+      for (const i of entry.splatIndices) {
+        const orig = splatOriginalColors.get(i);
+        if (!orig) continue;
+        _blendColor.setRGB(orig[0], orig[1], orig[2]);
+        const s = splatPackedSplats.getSplat(i);
+        splatPackedSplats.setSplat(i, s.center, s.scales, s.quaternion, s.opacity, _blendColor);
+      }
+    }
+
+    function restoreAllSplatColors() {
+      if (!splatOriginalColors) return;
+      for (const e of objectMeshes) {
+        if (e.splatIndices) restoreObjectColors(e);
+      }
+    }
+
+    // ── Build splat index lists and apply all highlight colors ─────────────────
+    function buildSplatHighlights() {
+      if (!splatPositions || !splatPackedSplats) return;
+
+      // First pass: collect all indices that will be modified, save originals
+      splatOriginalColors = new Map();
+      splatTargetColorMap = new Map();
+
       objectMeshes.forEach(e => {
-        if (e.highlightPoints) return; // already built
-        e.highlightPoints = buildObjectHighlight(e);
-        if (e.highlightPoints) {
-          splatHighlightGroup.add(e.highlightPoints);
-          e.highlightPoints.visible = displayMode === "splat" && e.visible;
+        if (!e.splatIndices) e.splatIndices = findSplatIndicesInBox(e);
+        const tc = new THREE.Color(e.colorHex);
+        for (const i of e.splatIndices) {
+          if (!splatOriginalColors.has(i)) {
+            const s = splatPackedSplats.getSplat(i);
+            splatOriginalColors.set(i, [s.color.r, s.color.g, s.color.b]);
+          }
+          // Last object wins for overlapping splats (fine for now)
+          splatTargetColorMap.set(i, tc);
         }
       });
+
+      // Second pass: apply blended colors for visible objects
+      objectMeshes.forEach(e => {
+        if (e.visible && e.splatIndices) applyObjectHighlight(e);
+      });
+
+      splatPackedSplats.needsUpdate = true;
+      setStatus(`Splat mode — ${splatOriginalColors.size} splats highlighted across ${objectMeshes.length} objects`);
     }
 
     // ── Switch between bbox and splat highlight modes ─────────────────────────
     function setSplatMode(mode) {
       if (mode === "splat") {
-        // Parse positions if not yet done
+        if (!splatPackedSplats) {
+          setStatus("Splat mode requires a loaded scene — load a Job ID or open a .ply first");
+          return;
+        }
         if (!splatPositions && splatRawBytes) {
           setStatus("Parsing splat positions…");
           splatPositions = parsePlyWorldPositions(splatRawBytes);
           if (!splatPositions) {
-            setStatus("Splat mode: could not parse .ply — only .ply binary files are supported");
+            setStatus("Could not parse .ply positions — binary .ply required for splat mode");
             return;
           }
         }
@@ -1147,28 +1202,32 @@
           setStatus("Splat mode requires a loaded .ply file — open one or load a Job ID first");
           return;
         }
+        // Restore any previous highlights before rebuilding
+        if (splatOriginalColors) { restoreAllSplatColors(); splatOriginalColors = null; }
         displayMode = "splat";
-        buildAllHighlights();
         objectMeshes.forEach(e => {
-          if (e.meshes[0]) e.meshes[0].visible = false; // lines
-          if (e.meshes[1]) e.meshes[1].visible = false; // fill
-          if (e.highlightPoints) e.highlightPoints.visible = e.visible;
+          if (e.meshes[0]) e.meshes[0].visible = false;
+          if (e.meshes[1]) e.meshes[1].visible = false;
         });
-        setStatus(`Splat mode — ${splatPositions.length / 3} splats, ${objectMeshes.length} objects highlighted`);
+        if (objectMeshes.length) buildSplatHighlights();
       } else {
+        if (displayMode === "splat" && splatOriginalColors) {
+          restoreAllSplatColors();
+          if (splatPackedSplats) splatPackedSplats.needsUpdate = true;
+          splatOriginalColors = null;
+        }
         displayMode = "bbox";
         objectMeshes.forEach(e => {
           if (e.meshes[0]) e.meshes[0].visible = e.visible;
           if (e.meshes[1]) e.meshes[1].visible = e.visible;
-          if (e.highlightPoints) e.highlightPoints.visible = false;
         });
         setStatus("Bounding box mode");
       }
       document.getElementById("smode-bbox").classList.toggle("active", displayMode === "bbox");
       document.getElementById("smode-splat").classList.toggle("active", displayMode === "splat");
-      document.getElementById("row-linewidth").style.display   = displayMode === "bbox"  ? "" : "none";
-      document.getElementById("row-intensity").style.display   = displayMode === "splat" ? "" : "none";
-      document.getElementById("row-pointsize").style.display   = displayMode === "splat" ? "" : "none";
+      document.getElementById("row-linewidth").style.display = displayMode === "bbox"  ? "" : "none";
+      document.getElementById("row-intensity").style.display = displayMode === "splat" ? "" : "none";
+      document.getElementById("row-pointsize").style.display = "none"; // removed point size (no longer needed)
     }
 
     // ── Load by Job ID ────────────────────────────────────────────────────────
@@ -1224,6 +1283,7 @@
               fileBytes: new Uint8Array(bytes), fileName: "scene.ply",
               onLoad: (mesh) => {
                 mesh.rotation.x = Math.PI;
+                splatPackedSplats = mesh.packedSplats || currentSplat?.packedSplats || null;
                 hideLoad();
                 try {
                   const box = new THREE.Box3().setFromObject(mesh);
@@ -1237,7 +1297,6 @@
                   }
                 } catch (_) {}
                 setStatus(`Job ${jobId.slice(0,8)} — ${interactions.length} objects · ${groups.length} cameras · ${frameUrls.length} frames`);
-                // If already in splat mode, build highlights now that the splat is loaded
                 if (displayMode === "splat") setSplatMode("splat");
               },
             });
