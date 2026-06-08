@@ -14,8 +14,10 @@ transforms.json gains two extra keys:
 """
 
 import argparse
+import gzip
 import json
 import math
+import struct
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -31,6 +33,95 @@ from gsplat import rasterization
 RENDER_BATCH = 32
 # Parallel threads for PNG / NPY disk writes.
 IO_WORKERS = 4
+
+
+# ---------------------------------------------------------------------------
+# SPZ → PLY converter
+# ---------------------------------------------------------------------------
+
+_SPZ_MAGIC = 0x5053474e   # little-endian bytes "NGSP"
+_SH_C0     = 0.28209479177387814
+
+
+def _convert_spz_to_ply(spz_path: str, ply_path: str) -> None:
+    """
+    Convert a Niantic SPZ file to a 3DGS-standard PLY file.
+
+    SPZ is a gzip-compressed binary with a 16-byte header followed by
+    packed Gaussian data: positions (int24), colors (uint8), alphas (uint8),
+    scales (uint8), rotations (uint8).  All quantisation is undone here and
+    the result is written as float32 PLY fields that _load_ply_gaussians()
+    expects.
+    """
+    from plyfile import PlyData, PlyElement
+
+    with gzip.open(spz_path, "rb") as fh:
+        data = np.frombuffer(fh.read(), dtype=np.uint8)
+
+    # ── header ────────────────────────────────────────────────────────────
+    magic, version, num_points = struct.unpack_from("<III", data, 0)
+    if magic != _SPZ_MAGIC:
+        raise ValueError(f"Not a valid SPZ file (magic={magic:#010x})")
+    sh_degree    = int(data[12])
+    frac_bits    = int(data[13])
+    # data[14] = flags, data[15] = reserved
+    offset = 16
+    N = int(num_points)
+
+    # ── positions (3 × int24 per point) ───────────────────────────────────
+    pos_raw = data[offset : offset + N * 9].reshape(N, 3, 3)
+    offset += N * 9
+
+    def _unpack_int24(raw):  # raw: (N, 3) uint8 → float32
+        v = (raw[:, 0].astype(np.int32)
+             | (raw[:, 1].astype(np.int32) << 8)
+             | (raw[:, 2].astype(np.int32) << 16))
+        v[v >= 0x800000] -= 0x1000000
+        return v.astype(np.float32) / float(1 << frac_bits)
+
+    positions = np.stack([_unpack_int24(pos_raw[:, i]) for i in range(3)], axis=1)
+
+    # ── colors (uint8 → f_dc SH coefficients) ────────────────────────────
+    colors_u8 = data[offset : offset + N * 3].reshape(N, 3)
+    offset += N * 3
+    sh_dc = (colors_u8.astype(np.float32) / 255.0 - 0.5) / _SH_C0
+
+    # ── alphas (uint8 → logit opacity) ────────────────────────────────────
+    alphas_u8 = data[offset : offset + N]
+    offset += N
+    a = np.clip(alphas_u8.astype(np.float32) / 255.0, 1e-6, 1.0 - 1e-6)
+    opacities = np.log(a / (1.0 - a))
+
+    # ── scales (uint8 → log-space scale) ─────────────────────────────────
+    scales_u8 = data[offset : offset + N * 3].reshape(N, 3)
+    offset += N * 3
+    log_scales = scales_u8.astype(np.float32) / 16.0 - 10.0
+
+    # ── rotations (uint8 xyz → unit quaternion wxyz) ──────────────────────
+    rots_u8 = data[offset : offset + N * 3].reshape(N, 3)
+    qxyz = rots_u8.astype(np.float32) / 127.5 - 1.0
+    w = np.sqrt(np.maximum(0.0, 1.0 - np.sum(qxyz ** 2, axis=1)))
+    quats = np.stack([w, qxyz[:, 0], qxyz[:, 1], qxyz[:, 2]], axis=1)
+    quats /= np.maximum(np.linalg.norm(quats, axis=1, keepdims=True), 1e-8)
+
+    # ── write PLY ─────────────────────────────────────────────────────────
+    dtype = [
+        ("x", "f4"), ("y", "f4"), ("z", "f4"),
+        ("nx", "f4"), ("ny", "f4"), ("nz", "f4"),
+        ("f_dc_0", "f4"), ("f_dc_1", "f4"), ("f_dc_2", "f4"),
+        ("opacity", "f4"),
+        ("scale_0", "f4"), ("scale_1", "f4"), ("scale_2", "f4"),
+        ("rot_0",   "f4"), ("rot_1",   "f4"), ("rot_2",   "f4"), ("rot_3", "f4"),
+    ]
+    verts = np.zeros(N, dtype=dtype)
+    verts["x"], verts["y"], verts["z"]                   = positions[:, 0], positions[:, 1], positions[:, 2]
+    verts["f_dc_0"], verts["f_dc_1"], verts["f_dc_2"]    = sh_dc[:, 0],     sh_dc[:, 1],     sh_dc[:, 2]
+    verts["opacity"]                                      = opacities
+    verts["scale_0"], verts["scale_1"], verts["scale_2"] = log_scales[:, 0], log_scales[:, 1], log_scales[:, 2]
+    verts["rot_0"], verts["rot_1"], verts["rot_2"], verts["rot_3"] = quats[:, 0], quats[:, 1], quats[:, 2], quats[:, 3]
+
+    PlyData([PlyElement.describe(verts, "vertex")]).write(ply_path)
+    print(f"[spz] Converted {N:,} Gaussians → {ply_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +310,11 @@ def render_views(ply_path: str, job_dir: str,
     job_dir = Path(job_dir)
     frames_dir = job_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
+
+    if Path(ply_path).suffix.lower() == ".spz":
+        converted = str(Path(ply_path).with_suffix(".ply"))
+        _convert_spz_to_ply(ply_path, converted)
+        ply_path = converted
 
     print(f"[render] Loading PLY: {ply_path}")
     g = _load_ply_gaussians(ply_path)

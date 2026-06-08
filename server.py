@@ -199,27 +199,30 @@ async def admin_html(): return FileResponse(WEBAPP_DIR / "admin.html")
     summary="Submit a detection job",
 )
 async def detect(
-    file:             UploadFile = File(...,  description=".ply Gaussian Splat file"),
+    file:             UploadFile = File(...,  description=".ply or .spz Gaussian Splat file"),
     prompt:           str        = Form(...,  description="Comma-separated object labels"),
     score_threshold:  float      = Form(0.12, description="OWLv2 per-frame confidence threshold (0–1)"),
     min_votes:        int        = Form(8,    description="Minimum frames a cluster must appear in"),
     min_peak_score:   float      = Form(0.40, description="Minimum best-frame score for a cluster to be kept (0–1)"),
     api_key:          str        = Depends(require_api_key),
 ):
-    """Upload a `.ply` and a comma-separated prompt. Returns `job_id` immediately.
+    """Upload a `.ply` or `.spz` file and a comma-separated prompt. Returns `job_id` immediately.
     Poll `/api/v1/jobs/{job_id}/status` until `done`, then fetch the result."""
-    job_id  = str(uuid.uuid4())
-    job_dir = WORK_DIR / job_id
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in (".ply", ".spz"):
+        raise HTTPException(status_code=400, detail="Only .ply and .spz files are supported")
+    job_id   = str(uuid.uuid4())
+    job_dir  = WORK_DIR / job_id
     job_dir.mkdir(parents=True)
-    ply_path = job_dir / "scene.ply"
+    scene_path = job_dir / f"scene{suffix}"
     try:
-        with open(ply_path, "wb") as f:
+        with open(scene_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
     finally:
         file.file.close()
     JOB_STATUS[job_id] = "pending"
     JOB_QUEUE_ORDER.append(job_id)
-    asyncio.create_task(_run_pipeline_queued(job_id, ply_path, prompt, job_dir,
+    asyncio.create_task(_run_pipeline_queued(job_id, scene_path, prompt, job_dir,
                                              score_threshold, min_votes, min_peak_score))
     logger.info(f"[{job_id}] Queued (position {len(JOB_QUEUE_ORDER)}) — "
                 f"file={file.filename!r} prompt={prompt!r} "
