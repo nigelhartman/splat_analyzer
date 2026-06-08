@@ -498,21 +498,15 @@
       else    { apiKeyStatus.textContent = "No key — load will fail"; apiKeyStatus.style.color = "#cf222e"; }
     }
 
-    // ── Colour map ────────────────────────────────────────────────────────────
-    const COLOURS = {
-      television:"#0969da",tv:"#0969da",monitor:"#0969da",screen:"#0969da",
-      sofa:"#1a7f37",couch:"#1a7f37",
-      armchair:"#9a3f00",chair:"#9a3f00",
-      desk:"#8250df",table:"#8250df",
-      "air conditioner":"#0550ae",ac:"#0550ae",
-      bed:"#bf3989",cabinet:"#bf3989",wardrobe:"#bf3989",
-      lamp:"#9a6700",light:"#9a6700",
-      refrigerator:"#0e7490",fridge:"#0e7490",
-    };
-    function labelColour(label) {
-      const l = label.toLowerCase();
-      for (const [k, v] of Object.entries(COLOURS)) if (l.includes(k)) return v;
-      return "#57606a";
+    // ── Colour palette — 20 visually distinct colours for dark backgrounds ──────
+    const RAINBOW_PALETTE = [
+      "#ff4444", "#ff8800", "#ffdd00", "#aaee00", "#22cc55",
+      "#00ddaa", "#00ccff", "#2288ff", "#6655ff", "#aa44ff",
+      "#ff44dd", "#ff4499", "#ff6644", "#44ffbb", "#44ddff",
+      "#ffbb33", "#cc44ff", "#55ffaa", "#ff88cc", "#88eeff",
+    ];
+    function objectColour(idx) {
+      return RAINBOW_PALETTE[idx % RAINBOW_PALETTE.length];
     }
 
     // ── Three.js setup ────────────────────────────────────────────────────────
@@ -803,7 +797,7 @@
       if (!annots || !annots.length) return;
       for (const det of annots) {
         const [x1, y1, x2, y2] = det.box;
-        const color = labelColour(det.label);
+        const color = objectColour(det.object_idx ?? 0);
         ctx.strokeStyle = color; ctx.lineWidth = 2;
         ctx.strokeRect(x1, y1, x2-x1, y2-y1);
         const txt = `${det.label}  ${Math.round(det.score*100)}%`;
@@ -983,9 +977,9 @@
         return;
       }
 
-      interactions.forEach((item) => {
-        const col = new THREE.Color(labelColour(item.label));
-        const hex = labelColour(item.label);
+      interactions.forEach((item, idx) => {
+        const hex = objectColour(idx);
+        const col = new THREE.Color(hex);
         const px  =  item.position.x, py = -item.position.y, pz = -item.position.z;
         // Support both debug format (scale+rotation) and clean format (size, no rotation)
         const size = item.scale || item.size || { x: 0.5, y: 0.5, z: 0.5 };
