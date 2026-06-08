@@ -591,7 +591,21 @@
       if (moveKeys.q) camera.position.y -= moveSpeed;
     }
 
-    renderer.setAnimationLoop(() => { updateFPSCamera(); renderer.render(scene, camera); labelRenderer.render(scene, camera); });
+    // SparkJS only runs its sort+upload pipeline when it detects camera movement.
+    // _splatNudge drives a 2-frame imperceptible camera jitter after any color
+    // change so SparkJS processes the update without waiting for real input.
+    let _splatNudge = 0;
+    function scheduleSplatUpdate() {
+      if (splatPackedSplats) { splatPackedSplats.needsUpdate = true; _splatNudge = 1; }
+    }
+
+    renderer.setAnimationLoop(() => {
+      updateFPSCamera();
+      if (_splatNudge === 1) { camera.position.x += 1e-5; _splatNudge = 2; }
+      else if (_splatNudge === 2) { camera.position.x -= 1e-5; _splatNudge = 0; }
+      renderer.render(scene, camera);
+      labelRenderer.render(scene, camera);
+    });
     window.addEventListener("resize", () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -691,7 +705,7 @@
         } else {
           restoreObjectColors(e);
         }
-        splatPackedSplats.needsUpdate = true;
+        scheduleSplatUpdate();
       }
       e.dot.classList.toggle("off", !visible);
     }
@@ -734,7 +748,7 @@
       // Re-apply blended colors with the new intensity
       if (displayMode === "splat" && splatPackedSplats && splatOriginalColors) {
         objectMeshes.forEach(e => { if (e.visible && e.splatIndices) applyObjectHighlight(e); });
-        splatPackedSplats.needsUpdate = true;
+        scheduleSplatUpdate();
       }
     });
     // Point size slider no longer needed (no overlay points); keep ref to avoid errors
@@ -864,7 +878,7 @@
       // Restore splat colors before wiping detection state
       if (displayMode === "splat" && splatPackedSplats && splatOriginalColors) {
         restoreAllSplatColors();
-        splatPackedSplats.needsUpdate = true;
+        scheduleSplatUpdate();
       }
       splatOriginalColors = null; splatTargetColorMap = null;
       boxGroup.clear();
@@ -1179,7 +1193,7 @@
         if (e.visible && e.splatIndices) applyObjectHighlight(e);
       });
 
-      splatPackedSplats.needsUpdate = true;
+      scheduleSplatUpdate();
       setStatus(`Splat mode — ${splatOriginalColors.size} splats highlighted across ${objectMeshes.length} objects`);
     }
 
@@ -1213,7 +1227,7 @@
       } else {
         if (displayMode === "splat" && splatOriginalColors) {
           restoreAllSplatColors();
-          if (splatPackedSplats) splatPackedSplats.needsUpdate = true;
+          scheduleSplatUpdate();
           splatOriginalColors = null;
         }
         displayMode = "bbox";
