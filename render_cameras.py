@@ -17,6 +17,7 @@ import argparse
 import json
 import math
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +25,12 @@ import torch
 import imageio.v2 as imageio
 
 from gsplat import rasterization
+
+# Number of camera views rendered in a single GPU call (RGB pass).
+# Increase if you have lots of VRAM; decrease if you hit OOM.
+RENDER_BATCH = 32
+# Parallel threads for PNG / NPY disk writes.
+IO_WORKERS = 4
 
 
 # ---------------------------------------------------------------------------
@@ -71,13 +78,13 @@ def _load_ply_gaussians(ply_path: str):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     return {
-        "means":    torch.tensor(means,    device=device),
-        "quats":    torch.tensor(quats,    device=device),
-        "scales":   torch.exp(torch.tensor(scales, device=device)),
+        "means":     torch.tensor(means,     device=device),
+        "quats":     torch.tensor(quats,     device=device),
+        "scales":    torch.exp(torch.tensor(scales,    device=device)),
         "opacities": torch.sigmoid(torch.tensor(opacities, device=device)),
-        "sh":       torch.tensor(sh_coeffs, device=device),
+        "sh":        torch.tensor(sh_coeffs, device=device),
         "sh_degree": sh_degree,
-        "device":   device,
+        "device":    device,
     }
 
 
@@ -168,45 +175,8 @@ def _build_poses(positions: list, n_azimuth: int, n_elevation: int,
 
 
 # ---------------------------------------------------------------------------
-# Depth rendering
+# Depth helpers
 # ---------------------------------------------------------------------------
-
-def _render_depth_map(g: dict, w2c: torch.Tensor,
-                      K_tensor: torch.Tensor, width: int, height: int) -> np.ndarray:
-    """
-    Render a per-pixel depth map by rasterizing per-Gaussian camera-space Z.
-    Returns a (H, W) float32 array in world units.
-    """
-    device = g["device"]
-    w2c_mat = w2c[0]  # (4, 4)
-
-    # Per-Gaussian Z in camera space
-    means_h = torch.cat([g["means"], torch.ones(g["means"].shape[0], 1, device=device)], dim=1)
-    z_cam = (w2c_mat @ means_h.T)[2].clamp(min=0.01)  # (N,)
-    # gsplat always requires 3 colour channels — broadcast depth across R/G/B
-    depth_colors = z_cam.view(-1, 1, 1).expand(-1, 1, 3)  # (N, 1, 3)
-
-    render_depth, _, _ = rasterization(
-        means=g["means"],
-        quats=g["quats"],
-        scales=g["scales"],
-        opacities=g["opacities"],
-        colors=depth_colors,
-        viewmats=w2c,
-        Ks=K_tensor.unsqueeze(0),
-        width=width,
-        height=height,
-        sh_degree=0,
-        near_plane=0.01,
-        far_plane=1000.0,
-    )
-    # gsplat sh_degree=0 applies: output = SH_C0 * z_cam + 0.5
-    # Invert to recover actual camera-space Z in world units (metres).
-    SH_C0 = 0.28209479177387814
-    rendered = render_depth[0, :, :, 0].cpu().numpy()
-    depth_m = np.maximum((rendered - 0.5) / SH_C0, 0.0)
-    return depth_m.astype(np.float32)
-
 
 def _depth_to_vis(depth_map: np.ndarray) -> np.ndarray:
     """Normalize depth to uint8 grayscale: near=bright (255), far=dark (0)."""
@@ -218,6 +188,14 @@ def _depth_to_vis(depth_map: np.ndarray) -> np.ndarray:
         return np.full(depth_map.shape, 128, dtype=np.uint8)
     d_norm = np.clip((depth_map - d_min) / (d_max - d_min), 0.0, 1.0)
     return (255 * (1.0 - d_norm)).astype(np.uint8)
+
+
+def _write_frame(frames_dir: Path, idx: int,
+                 rgb: np.ndarray, depth_m: np.ndarray, depth_vis: np.ndarray):
+    """Write one frame's RGB PNG, raw depth NPY, and colorized depth PNG. Runs in a thread."""
+    imageio.imwrite(str(frames_dir / f"frame_{idx:04d}.png"), rgb)
+    np.save(str(frames_dir / f"depth_{idx:04d}.npy"), depth_m)
+    imageio.imwrite(str(frames_dir / f"depth_{idx:04d}.png"), depth_vis)
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +211,10 @@ def render_views(ply_path: str, job_dir: str,
       <job_dir>/frames/depth_XXXX.png   (colorized, for display)
       <job_dir>/frames/depth_XXXX.npy   (raw float, for pipeline depth lookup)
       <job_dir>/transforms.json
+
+    RGB frames are rasterized in batches of RENDER_BATCH so the GPU stays
+    continuously loaded. Disk writes run in a thread pool overlapping with
+    the next GPU batch.
     """
     job_dir = Path(job_dir)
     frames_dir = job_dir / "frames"
@@ -245,7 +227,7 @@ def render_views(ply_path: str, job_dir: str,
     center, radius = _scene_bounds(g["means"])
     print(f"[render] Scene center={center.round(3)}, radius={radius:.3f}")
 
-    # Camera intrinsics — 150° horizontal FoV
+    # Camera intrinsics — 130° horizontal FoV
     fov_x = math.radians(130.0)
     fl_x = width / (2.0 * math.tan(fov_x / 2.0))
     fl_y = fl_x
@@ -256,11 +238,21 @@ def render_views(ply_path: str, job_dir: str,
         dtype=torch.float32, device=device,
     )
 
-    # Build camera positions and poses
     cam_positions = _generate_camera_positions(center, radius, n_positions)
     poses, position_indices = _build_poses(cam_positions, n_azimuth, n_elevation)
     total = len(poses)
-    print(f"[render] {n_positions} positions × {n_azimuth} azimuth × {n_elevation} elevation = {total} views, FOV=150°")
+    print(f"[render] {n_positions} positions × {n_azimuth} azimuth × {n_elevation} elevation = {total} views"
+          f"  (batch={RENDER_BATCH}, io_workers={IO_WORKERS}, device={device})")
+
+    # Build all w2c matrices on GPU in one shot — avoids per-frame tensor creation
+    all_c2w = torch.tensor(np.stack(poses), device=device, dtype=torch.float32)  # (T, 4, 4)
+    all_w2c = torch.linalg.inv(all_c2w)                                           # (T, 4, 4)
+
+    # Homogeneous Gaussian means for depth z_cam = (w2c @ means_h.T)[2]
+    N = g["means"].shape[0]
+    means_h = torch.cat(
+        [g["means"], torch.ones(N, 1, device=device)], dim=1
+    ).contiguous()  # (N, 4)
 
     transforms = {
         "fl_x": fl_x, "fl_y": fl_y, "cx": cx, "cy": cy,
@@ -271,36 +263,72 @@ def render_views(ply_path: str, job_dir: str,
         "frames": [],
     }
 
-    for idx, (c2w, pos_idx) in enumerate(zip(poses, position_indices)):
-        if idx % 10 == 0:
-            print(f"[render]  {idx}/{total} …")
+    SH_C0 = 0.28209479177387814
+    futures = []
 
-        c2w_t = torch.tensor(c2w, device=device).unsqueeze(0)  # (1,4,4)
-        w2c = torch.linalg.inv(c2w_t)
+    with ThreadPoolExecutor(max_workers=IO_WORKERS) as pool:
+        for b0 in range(0, total, RENDER_BATCH):
+            b1 = min(b0 + RENDER_BATCH, total)
+            B = b1 - b0
+            print(f"[render]  {b0}/{total} …")
 
-        # ── RGB render ────────────────────────────────────────────────────────
-        render_colors, _, _ = rasterization(
-            means=g["means"], quats=g["quats"], scales=g["scales"],
-            opacities=g["opacities"], colors=g["sh"],
-            viewmats=w2c, Ks=K.unsqueeze(0),
-            width=width, height=height,
-            sh_degree=g["sh_degree"],
-            near_plane=0.01, far_plane=1000.0,
-        )
-        rgb = (render_colors[0].clamp(0, 1).cpu().numpy() * 255).astype(np.uint8)
-        imageio.imwrite(str(frames_dir / f"frame_{idx:04d}.png"), rgb)
+            w2c_batch = all_w2c[b0:b1].contiguous()                        # (B, 4, 4)
+            K_batch   = K.unsqueeze(0).expand(B, -1, -1).contiguous()      # (B, 3, 3)
 
-        # ── Depth render ──────────────────────────────────────────────────────
-        depth_map = _render_depth_map(g, w2c, K, width, height)
-        np.save(str(frames_dir / f"depth_{idx:04d}.npy"), depth_map.astype(np.float32))
-        imageio.imwrite(str(frames_dir / f"depth_{idx:04d}.png"), _depth_to_vis(depth_map))
+            # ── Batched RGB render ─────────────────────────────────────────────
+            # Single GPU rasterization call for all B views simultaneously.
+            rgb_out, _, _ = rasterization(
+                means=g["means"], quats=g["quats"], scales=g["scales"],
+                opacities=g["opacities"], colors=g["sh"],
+                viewmats=w2c_batch, Ks=K_batch,
+                width=width, height=height,
+                sh_degree=g["sh_degree"],
+                near_plane=0.01, far_plane=1000.0,
+            )
+            # Move all B frames to CPU in one transfer
+            rgb_cpu = (rgb_out.clamp(0, 1).cpu().numpy() * 255).astype(np.uint8)  # (B, H, W, 3)
 
-        transforms["frames"].append({
-            "file_path":        f"frames/frame_{idx:04d}.png",
-            "depth_path":       f"frames/depth_{idx:04d}.png",
-            "transform_matrix": c2w.tolist(),
-            "position_idx":     int(pos_idx),
-        })
+            # ── Depth renders ──────────────────────────────────────────────────
+            # Camera-space Z for every Gaussian across all B views in one bmm:
+            # (B, 4, 4) @ (B, 4, N) → (B, 4, N) → row 2 → (B, N)
+            z_batch = torch.bmm(
+                w2c_batch,
+                means_h.T.unsqueeze(0).expand(B, -1, -1).contiguous(),
+            )[:, 2, :].clamp(min=0.01).contiguous()  # (B, N)
+
+            # Depth rasterization is view-dependent (z_cam varies per view),
+            # so we call rasterization once per view — but z_cam is already on GPU.
+            depth_cpu = []
+            for bi in range(B):
+                dc = z_batch[bi].view(-1, 1, 1).expand(-1, 1, 3).contiguous()  # (N, 1, 3)
+                dr, _, _ = rasterization(
+                    means=g["means"], quats=g["quats"], scales=g["scales"],
+                    opacities=g["opacities"], colors=dc,
+                    viewmats=w2c_batch[bi:bi+1], Ks=K_batch[bi:bi+1],
+                    width=width, height=height, sh_degree=0,
+                    near_plane=0.01, far_plane=1000.0,
+                )
+                dm = np.maximum(
+                    (dr[0, :, :, 0].cpu().numpy() - 0.5) / SH_C0, 0.0
+                ).astype(np.float32)
+                depth_cpu.append(dm)
+
+            # ── Submit I/O to thread pool (overlaps with next GPU batch) ───────
+            for bi, idx in enumerate(range(b0, b1)):
+                futures.append(pool.submit(
+                    _write_frame, frames_dir, idx,
+                    rgb_cpu[bi], depth_cpu[bi], _depth_to_vis(depth_cpu[bi]),
+                ))
+                transforms["frames"].append({
+                    "file_path":        f"frames/frame_{idx:04d}.png",
+                    "depth_path":       f"frames/depth_{idx:04d}.png",
+                    "transform_matrix": poses[idx].tolist(),
+                    "position_idx":     int(position_indices[idx]),
+                })
+
+        # Drain futures — re-raises any disk write errors
+        for f in as_completed(futures):
+            f.result()
 
     transforms_path = job_dir / "transforms.json"
     with open(transforms_path, "w") as f:
@@ -312,13 +340,13 @@ def render_views(ply_path: str, job_dir: str,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ply",        required=True)
-    parser.add_argument("--job_dir",    required=True)
-    parser.add_argument("--width",      type=int, default=512)
-    parser.add_argument("--height",     type=int, default=512)
-    parser.add_argument("--n_positions",type=int, default=5)
-    parser.add_argument("--n_azimuth",  type=int, default=6)
-    parser.add_argument("--n_elevation",type=int, default=3)
+    parser.add_argument("--ply",         required=True)
+    parser.add_argument("--job_dir",     required=True)
+    parser.add_argument("--width",       type=int, default=512)
+    parser.add_argument("--height",      type=int, default=512)
+    parser.add_argument("--n_positions", type=int, default=5)
+    parser.add_argument("--n_azimuth",   type=int, default=6)
+    parser.add_argument("--n_elevation", type=int, default=3)
     args = parser.parse_args()
     render_views(args.ply, args.job_dir, args.width, args.height,
                  args.n_positions, args.n_azimuth, args.n_elevation)
