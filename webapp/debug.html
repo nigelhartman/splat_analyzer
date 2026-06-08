@@ -505,8 +505,13 @@
       "#ff44dd", "#ff4499", "#ff6644", "#44ffbb", "#44ddff",
       "#ffbb33", "#cc44ff", "#55ffaa", "#ff88cc", "#88eeff",
     ];
-    function objectColour(idx) {
-      return RAINBOW_PALETTE[idx % RAINBOW_PALETTE.length];
+    let _labelColorMap = new Map(), _labelColorIdx = 0;
+    function labelColour(label) {
+      const key = label.toLowerCase().trim();
+      if (!_labelColorMap.has(key)) {
+        _labelColorMap.set(key, RAINBOW_PALETTE[_labelColorIdx++ % RAINBOW_PALETTE.length]);
+      }
+      return _labelColorMap.get(key);
     }
 
     // ── Three.js setup ────────────────────────────────────────────────────────
@@ -797,7 +802,7 @@
       if (!annots || !annots.length) return;
       for (const det of annots) {
         const [x1, y1, x2, y2] = det.box;
-        const color = objectColour(det.object_idx ?? 0);
+        const color = labelColour(det.label);
         ctx.strokeStyle = color; ctx.lineWidth = 2;
         ctx.strokeRect(x1, y1, x2-x1, y2-y1);
         const txt = `${det.label}  ${Math.round(det.score*100)}%`;
@@ -867,6 +872,7 @@
       resultsCount.textContent = "0"; framesCount.textContent = "0"; camerasCount.textContent = "0";
       currentRgbUrls = []; currentDepthUrls = []; cameraGroupsData = [];
       frameAnnotationsData = {}; objectMeshes = []; currentDetections = []; currentJobId = null;
+      _labelColorMap = new Map(); _labelColorIdx = 0;
       toggleAllBtn.textContent = "Hide All"; dlJsonBtn.disabled = true; dlFramesBtn.disabled = true;
       resultsPanel.classList.remove("open");
     }
@@ -977,8 +983,8 @@
         return;
       }
 
-      interactions.forEach((item, idx) => {
-        const hex = objectColour(idx);
+      interactions.forEach((item) => {
+        const hex = labelColour(item.label);
         const col = new THREE.Color(hex);
         const px  =  item.position.x, py = -item.position.y, pz = -item.position.z;
         // Support both debug format (scale+rotation) and clean format (size, no rotation)
