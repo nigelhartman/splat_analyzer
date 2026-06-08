@@ -123,19 +123,26 @@ async def _cleanup_loop():
 
 
 # ── Pipeline runner ───────────────────────────────────────────────────────────
-async def _run_pipeline_queued(job_id: str, ply_path: Path, prompt: str, job_dir: Path):
+async def _run_pipeline_queued(job_id: str, ply_path: Path, prompt: str, job_dir: Path,
+                               score_threshold: float, min_votes: int, min_peak_score: float):
     """Wait for the semaphore (one job at a time), then run the pipeline."""
     async with _JOB_SEMAPHORE:
         if job_id in JOB_QUEUE_ORDER:
             JOB_QUEUE_ORDER.remove(job_id)
-        await _run_pipeline(job_id, ply_path, prompt, job_dir)
+        await _run_pipeline(job_id, ply_path, prompt, job_dir,
+                            score_threshold, min_votes, min_peak_score)
 
-async def _run_pipeline(job_id: str, ply_path: Path, prompt: str, job_dir: Path):
+async def _run_pipeline(job_id: str, ply_path: Path, prompt: str, job_dir: Path,
+                        score_threshold: float, min_votes: int, min_peak_score: float):
     JOB_STATUS[job_id] = "running"
-    logger.info(f"[{job_id}] Running pipeline prompt={prompt!r}")
+    logger.info(f"[{job_id}] Running pipeline prompt={prompt!r} "
+                f"score_threshold={score_threshold} min_votes={min_votes} min_peak_score={min_peak_score}")
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "pipeline.py",
         "--ply", str(ply_path), "--prompt", prompt, "--job_dir", str(job_dir),
+        "--score_threshold", str(score_threshold),
+        "--min_votes", str(min_votes),
+        "--min_peak_score", str(min_peak_score),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -192,9 +199,12 @@ async def admin_html(): return FileResponse(WEBAPP_DIR / "admin.html")
     summary="Submit a detection job",
 )
 async def detect(
-    file:    UploadFile = File(..., description=".ply Gaussian Splat file"),
-    prompt:  str        = Form(..., description="Comma-separated object labels"),
-    api_key: str        = Depends(require_api_key),
+    file:             UploadFile = File(...,  description=".ply Gaussian Splat file"),
+    prompt:           str        = Form(...,  description="Comma-separated object labels"),
+    score_threshold:  float      = Form(0.12, description="OWLv2 per-frame confidence threshold (0–1)"),
+    min_votes:        int        = Form(8,    description="Minimum frames a cluster must appear in"),
+    min_peak_score:   float      = Form(0.40, description="Minimum best-frame score for a cluster to be kept (0–1)"),
+    api_key:          str        = Depends(require_api_key),
 ):
     """Upload a `.ply` and a comma-separated prompt. Returns `job_id` immediately.
     Poll `/api/v1/jobs/{job_id}/status` until `done`, then fetch the result."""
@@ -209,8 +219,11 @@ async def detect(
         file.file.close()
     JOB_STATUS[job_id] = "pending"
     JOB_QUEUE_ORDER.append(job_id)
-    asyncio.create_task(_run_pipeline_queued(job_id, ply_path, prompt, job_dir))
-    logger.info(f"[{job_id}] Queued (position {len(JOB_QUEUE_ORDER)}) — file={file.filename!r} prompt={prompt!r}")
+    asyncio.create_task(_run_pipeline_queued(job_id, ply_path, prompt, job_dir,
+                                             score_threshold, min_votes, min_peak_score))
+    logger.info(f"[{job_id}] Queued (position {len(JOB_QUEUE_ORDER)}) — "
+                f"file={file.filename!r} prompt={prompt!r} "
+                f"score_threshold={score_threshold} min_votes={min_votes} min_peak_score={min_peak_score}")
     return {"job_id": job_id, "status": "pending", "queue_position": len(JOB_QUEUE_ORDER)}
 
 

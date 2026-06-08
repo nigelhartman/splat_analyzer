@@ -115,7 +115,8 @@ def _cluster_detections(detections, eps_m=0.5, max_per_label=3,
 # OWLv2 detection
 # ---------------------------------------------------------------------------
 
-def _run_owlv2(frames_dir: Path, labels: list[str], transforms: dict, scene_radius: float):
+def _run_owlv2(frames_dir: Path, labels: list[str], transforms: dict, scene_radius: float,
+               score_threshold: float = 0.12):
     """
     Run OWLv2 on all rendered frames.
     Uses per-pixel depth maps (depth_XXXX.npy) for accurate 3D back-projection.
@@ -140,7 +141,6 @@ def _run_owlv2(frames_dir: Path, labels: list[str], transforms: dict, scene_radi
     texts = [[f"a photo of a {lbl.strip()}" for lbl in labels]]
 
     raw_detections = []
-    score_threshold = 0.12
 
     scene_center  = np.array(transforms.get("scene_center", [0.0, 0.0, 0.0]))
     stored_radius = transforms.get("scene_radius", scene_radius)
@@ -221,7 +221,10 @@ def _run_owlv2(frames_dir: Path, labels: list[str], transforms: dict, scene_radi
 # Main
 # ---------------------------------------------------------------------------
 
-def run_pipeline(ply_path: str, prompt: str, job_dir: str) -> list[dict]:
+def run_pipeline(ply_path: str, prompt: str, job_dir: str,
+                 score_threshold: float = 0.12,
+                 min_votes: int = 8,
+                 min_peak_score: float = 0.40) -> list[dict]:
     job_dir = Path(job_dir)
 
     print("[pipeline] Step 1: Rendering camera views …")
@@ -243,7 +246,8 @@ def run_pipeline(ply_path: str, prompt: str, job_dir: str) -> list[dict]:
         raise ValueError("prompt must contain at least one label")
 
     print(f"[pipeline] Step 2: Detecting {labels} in {len(transforms['frames'])} frames …")
-    raw_detections = _run_owlv2(frames_dir, labels, transforms, scene_radius)
+    raw_detections = _run_owlv2(frames_dir, labels, transforms, scene_radius,
+                                score_threshold=score_threshold)
 
     frame_annotations: dict = {}   # frame_idx (str) → [{label, object_idx, box, score}]
 
@@ -256,8 +260,8 @@ def run_pipeline(ply_path: str, prompt: str, job_dir: str) -> list[dict]:
             raw_detections,
             eps_m=transforms.get("scene_radius", scene_radius) * 0.20,
             max_per_label=3,
-            min_votes=8,
-            min_peak_score=0.40,
+            min_votes=min_votes,
+            min_peak_score=min_peak_score,
         )
 
         interactions = []
@@ -303,9 +307,15 @@ def run_pipeline(ply_path: str, prompt: str, job_dir: str) -> list[dict]:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ply",     required=True)
-    parser.add_argument("--prompt",  required=True)
-    parser.add_argument("--job_dir", required=True)
+    parser.add_argument("--ply",              required=True)
+    parser.add_argument("--prompt",           required=True)
+    parser.add_argument("--job_dir",          required=True)
+    parser.add_argument("--score_threshold",  type=float, default=0.12)
+    parser.add_argument("--min_votes",        type=int,   default=8)
+    parser.add_argument("--min_peak_score",   type=float, default=0.40)
     args = parser.parse_args()
-    result = run_pipeline(args.ply, args.prompt, args.job_dir)
+    result = run_pipeline(args.ply, args.prompt, args.job_dir,
+                          score_threshold=args.score_threshold,
+                          min_votes=args.min_votes,
+                          min_peak_score=args.min_peak_score)
     print(json.dumps(result, indent=2))
