@@ -591,18 +591,17 @@
       if (moveKeys.q) camera.position.y -= moveSpeed;
     }
 
-    // SparkJS only runs its sort+upload pipeline when it detects camera movement.
-    // _splatNudge drives a 2-frame imperceptible camera jitter after any color
-    // change so SparkJS processes the update without waiting for real input.
-    let _splatNudge = 0;
+    // SparkJS re-generates splats when SplatGenerator.version changes.
+    // Setting currentSplat.needsUpdate = true increments the version and
+    // triggers the full pipeline (texture re-upload + re-sort) without
+    // requiring any camera movement.
     function scheduleSplatUpdate() {
-      if (splatPackedSplats) { splatPackedSplats.needsUpdate = true; _splatNudge = 1; }
+      if (splatPackedSplats) splatPackedSplats.needsUpdate = true;
+      if (currentSplat) currentSplat.needsUpdate = true;
     }
 
     renderer.setAnimationLoop(() => {
       updateFPSCamera();
-      if (_splatNudge === 1) { camera.position.x += 1e-5; _splatNudge = 2; }
-      else if (_splatNudge === 2) { camera.position.x -= 1e-5; _splatNudge = 0; }
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
     });
