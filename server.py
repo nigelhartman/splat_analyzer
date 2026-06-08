@@ -21,8 +21,10 @@ ADMIN_USER     = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "changeme")
 WEBAPP_DIR     = Path("webapp")
 
-JOB_STATUS     = {}  # {job_id: "pending"|"running"|"done"|"failed"}
-ADMIN_SESSIONS = {}  # {token: expiry_epoch}
+JOB_STATUS      = {}   # {job_id: "pending"|"running"|"done"|"failed"}
+JOB_QUEUE_ORDER: list = []  # job_ids in submission order while pending
+_JOB_SEMAPHORE: asyncio.Semaphore | None = None  # enforces one job at a time
+ADMIN_SESSIONS  = {}   # {token: expiry_epoch}
 
 
 # ── Database ─────────────────────────────────────────────────────────────────
@@ -50,8 +52,10 @@ def _now():
 # ── App lifecycle ─────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(_):
+    global _JOB_SEMAPHORE
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     _init_db()
+    _JOB_SEMAPHORE = asyncio.Semaphore(1)
     asyncio.create_task(_cleanup_loop())
     yield
 
@@ -119,6 +123,13 @@ async def _cleanup_loop():
 
 
 # ── Pipeline runner ───────────────────────────────────────────────────────────
+async def _run_pipeline_queued(job_id: str, ply_path: Path, prompt: str, job_dir: Path):
+    """Wait for the semaphore (one job at a time), then run the pipeline."""
+    async with _JOB_SEMAPHORE:
+        if job_id in JOB_QUEUE_ORDER:
+            JOB_QUEUE_ORDER.remove(job_id)
+        await _run_pipeline(job_id, ply_path, prompt, job_dir)
+
 async def _run_pipeline(job_id: str, ply_path: Path, prompt: str, job_dir: Path):
     JOB_STATUS[job_id] = "running"
     logger.info(f"[{job_id}] Running pipeline prompt={prompt!r}")
@@ -197,9 +208,10 @@ async def detect(
     finally:
         file.file.close()
     JOB_STATUS[job_id] = "pending"
-    asyncio.create_task(_run_pipeline(job_id, ply_path, prompt, job_dir))
-    logger.info(f"[{job_id}] Queued — file={file.filename!r} prompt={prompt!r}")
-    return {"job_id": job_id, "status": "pending"}
+    JOB_QUEUE_ORDER.append(job_id)
+    asyncio.create_task(_run_pipeline_queued(job_id, ply_path, prompt, job_dir))
+    logger.info(f"[{job_id}] Queued (position {len(JOB_QUEUE_ORDER)}) — file={file.filename!r} prompt={prompt!r}")
+    return {"job_id": job_id, "status": "pending", "queue_position": len(JOB_QUEUE_ORDER)}
 
 
 @app.get(
@@ -212,7 +224,15 @@ async def job_status(job_id: str, api_key: str = Depends(require_api_key)):
     status = JOB_STATUS.get(job_id)
     if status is None and not (WORK_DIR / job_id).exists():
         raise HTTPException(404, "Job not found")
-    return {"job_id": job_id, "status": status or "unknown"}
+    result: dict = {"job_id": job_id, "status": status or "unknown"}
+    if status == "pending":
+        try:
+            pos = JOB_QUEUE_ORDER.index(job_id) + 1
+        except ValueError:
+            pos = 1  # transitioning to running
+        result["queue_position"] = pos
+        result["queue_ahead"] = pos - 1
+    return result
 
 
 @app.get(

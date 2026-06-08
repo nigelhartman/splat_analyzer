@@ -491,17 +491,23 @@
       jobIdText.textContent = job_id;
       jobIdSection.classList.add("show");
 
-      showProgress("Job queued — rendering camera views…", 12);
+      showProgress("Queued — waiting for pipeline…", 12);
       startTicker(12);
 
       while (true) {
         await sleep(3500);
         const sr = await fetch(`/api/v1/jobs/${job_id}/status`, { headers: { "X-API-Key": key } });
         if (!sr.ok) throw new Error("Status check failed");
-        const { status } = await sr.json();
+        const { status, queue_position, queue_ahead } = await sr.json();
         if (status === "done") break;
         if (status === "failed") throw new Error("Detection pipeline failed. Check the debug view for details.");
-        progressMsg.textContent = status === "running" ? "Rendering + detecting (~2–3 min)…" : "Starting pipeline…";
+        if (status === "pending") {
+          progressMsg.textContent = queue_ahead > 0
+            ? `Position ${queue_position} in queue — ${queue_ahead} job${queue_ahead !== 1 ? "s" : ""} ahead…`
+            : "Starting pipeline…";
+        } else {
+          progressMsg.textContent = "Rendering + detecting (~1 min)…";
+        }
       }
 
       stopTicker(); showProgress("Loading results…", 96);
