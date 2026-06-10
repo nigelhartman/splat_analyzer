@@ -26,6 +26,7 @@ source "$ENV_FILE"
 
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-changeme}"
+DOMAIN="${DOMAIN:?DOMAIN not set in .env}"
 CUDA_ARCH_LIST="${CUDA_ARCH_LIST:-8.9}"
 
 APP_DIR="/home/${SERVER_USER}/WorldModelData"
@@ -187,6 +188,7 @@ sudo docker run -d \\
   --restart unless-stopped \\
   -p 80:80 \\
   -p 443:443 \\
+  -e DOMAIN="${DOMAIN}" \\
   -v caddy-data:/data \\
   -v caddy-config:/config \\
   -v ${APP_DIR}/Caddyfile:/etc/caddy/Caddyfile:ro \\
@@ -218,11 +220,11 @@ echo ""
 echo "=================================================="
 echo "  Deployment complete!"
 echo ""
-echo "  HTTPS       ->  https://splatanalyzer.example.com/"
+echo "  HTTPS       ->  https://${DOMAIN}/"
 echo "  Direct      ->  http://${SERVER_IP}:8000/"
-echo "  Debug view  ->  https://splatanalyzer.example.com/debug"
-echo "  Admin panel ->  https://splatanalyzer.example.com/admin"
-echo "  API docs    ->  https://splatanalyzer.example.com/docs"
+echo "  Debug view  ->  https://${DOMAIN}/debug"
+echo "  Admin panel ->  https://${DOMAIN}/admin"
+echo "  API docs    ->  https://${DOMAIN}/docs"
 echo ""
 echo "  Admin credentials: ${ADMIN_USER} / ${ADMIN_PASSWORD}"
 echo "  (Change ADMIN_USER and ADMIN_PASSWORD in .env)"

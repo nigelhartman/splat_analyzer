@@ -39,86 +39,128 @@ IO_WORKERS = 4
 # SPZ → PLY converter
 # ---------------------------------------------------------------------------
 
-_SPZ_MAGIC = 0x5053474e   # little-endian bytes "NGSP"
-_SH_C0     = 0.28209479177387814
+_SPZ_MAGIC = 1347635022  # bytes "NGSP" read as uint32 LE = 0x5053474E
 
 
 def _convert_spz_to_ply(spz_path: str, ply_path: str) -> None:
     """
-    Convert a Niantic SPZ file to a 3DGS-standard PLY file.
+    Convert a Niantic SPZ (gzip-compressed) file to a 3DGS PLY file.
 
-    SPZ is a gzip-compressed binary with a 16-byte header followed by
-    packed Gaussian data: positions (int24), colors (uint8), alphas (uint8),
-    scales (uint8), rotations (uint8).  All quantisation is undone here and
-    the result is written as float32 PLY fields that _load_ply_gaussians()
-    expects.
+    Data order in SPZ (verified against SparkJS SpzReader):
+      positions → alphas → colors → scales → quaternions
+
+    Color encoding:  display_color = (byte/255 - 0.5) * (SH_C0/0.15) + 0.5
+                     f_dc = (display_color - 0.5) / SH_C0 = (byte/255 - 0.5) / 0.15
+
+    Quaternion v1/v2: 3 bytes xyz → w = sqrt(1 - x²-y²-z²), callback order (x,y,z,w)
+    Quaternion v3:    4 bytes "smallest-3" packed, callback order (x,y,z,w)
+    PLY stores wxyz → rot_0=w, rot_1=x, rot_2=y, rot_3=z
     """
     from plyfile import PlyData, PlyElement
 
     with gzip.open(spz_path, "rb") as fh:
         data = np.frombuffer(fh.read(), dtype=np.uint8)
 
-    # ── header ────────────────────────────────────────────────────────────
     magic, version, num_points = struct.unpack_from("<III", data, 0)
     if magic != _SPZ_MAGIC:
         raise ValueError(f"Not a valid SPZ file (magic={magic:#010x})")
-    sh_degree    = int(data[12])
-    frac_bits    = int(data[13])
-    # data[14] = flags, data[15] = reserved
+    if not (1 <= version <= 3):
+        raise ValueError(f"Unsupported SPZ version: {version}")
+    sh_degree = int(data[12])
+    frac_bits = int(data[13])
     offset = 16
     N = int(num_points)
+    print(f"[spz] version={version} numSplats={N:,} shDegree={sh_degree} fractionalBits={frac_bits}")
 
-    # ── positions (3 × int24 per point) ───────────────────────────────────
-    pos_raw = data[offset : offset + N * 9].reshape(N, 3, 3)
-    offset += N * 9
+    # ── positions ────────────────────────────────────────────────────────
+    if version == 1:
+        positions = np.frombuffer(data, dtype="<f2", count=N * 3, offset=offset).astype(np.float32).reshape(N, 3)
+        offset += N * 6
+    else:
+        fixed = float(1 << frac_bits)
+        pos_raw = data[offset : offset + N * 9].reshape(N, 9)
+        offset += N * 9
+        positions = np.zeros((N, 3), dtype=np.float32)
+        for j in range(3):
+            b = pos_raw[:, j * 3 : j * 3 + 3]
+            # arithmetic right-shift for sign extension: (b2<<24 | b1<<16 | b0<<8) >> 8
+            v = ((b[:, 2].astype(np.int32) << 24) |
+                 (b[:, 1].astype(np.int32) << 16) |
+                 (b[:, 0].astype(np.int32) << 8)) >> 8
+            positions[:, j] = v.astype(np.float32) / fixed
 
-    def _unpack_int24(raw):  # raw: (N, 3) uint8 → float32
-        v = (raw[:, 0].astype(np.int32)
-             | (raw[:, 1].astype(np.int32) << 8)
-             | (raw[:, 2].astype(np.int32) << 16))
-        v[v >= 0x800000] -= 0x1000000
-        return v.astype(np.float32) / float(1 << frac_bits)
-
-    positions = np.stack([_unpack_int24(pos_raw[:, i]) for i in range(3)], axis=1)
-
-    # ── colors (uint8 → f_dc SH coefficients) ────────────────────────────
-    colors_u8 = data[offset : offset + N * 3].reshape(N, 3)
-    offset += N * 3
-    sh_dc = (colors_u8.astype(np.float32) / 255.0 - 0.5) / _SH_C0
-
-    # ── alphas (uint8 → logit opacity) ────────────────────────────────────
-    alphas_u8 = data[offset : offset + N]
+    # ── alphas (BEFORE colors in SPZ) → logit for PLY ────────────────────
+    alpha_u8 = data[offset : offset + N].astype(np.float32)
     offset += N
-    a = np.clip(alphas_u8.astype(np.float32) / 255.0, 1e-6, 1.0 - 1e-6)
+    a = np.clip(alpha_u8 / 255.0, 1e-6, 1.0 - 1e-6)
     opacities = np.log(a / (1.0 - a))
 
-    # ── scales (uint8 → log-space scale) ─────────────────────────────────
-    scales_u8 = data[offset : offset + N * 3].reshape(N, 3)
+    # ── colors (AFTER alphas in SPZ) → f_dc SH coefficients ─────────────
+    # SparkJS: display = (byte/255 - 0.5) * (SH_C0/0.15) + 0.5
+    # f_dc = (display - 0.5) / SH_C0 → simplifies to (byte/255 - 0.5) / 0.15
+    color_u8 = data[offset : offset + N * 3].reshape(N, 3).astype(np.float32)
     offset += N * 3
-    log_scales = scales_u8.astype(np.float32) / 16.0 - 10.0
+    sh_dc = (color_u8 / 255.0 - 0.5) / 0.15
 
-    # ── rotations (uint8 xyz → unit quaternion wxyz) ──────────────────────
-    rots_u8 = data[offset : offset + N * 3].reshape(N, 3)
-    qxyz = rots_u8.astype(np.float32) / 127.5 - 1.0
-    w = np.sqrt(np.maximum(0.0, 1.0 - np.sum(qxyz ** 2, axis=1)))
-    quats = np.stack([w, qxyz[:, 0], qxyz[:, 1], qxyz[:, 2]], axis=1)
+    # ── scales → log-scale for PLY ────────────────────────────────────────
+    scale_u8 = data[offset : offset + N * 3].reshape(N, 3).astype(np.float32)
+    offset += N * 3
+    log_scales = scale_u8 / 16.0 - 10.0
+
+    # ── quaternions → wxyz for PLY ────────────────────────────────────────
+    if version >= 3:
+        # "Smallest-3" packing: 4 bytes per splat, 9-bit value + 1-bit sign per
+        # component (3 stored), 2-bit largest-component index in top bits.
+        qb = data[offset : offset + N * 4]
+        offset += N * 4
+        combined = (qb[0::4].astype(np.uint32)
+                    | (qb[1::4].astype(np.uint32) << 8)
+                    | (qb[2::4].astype(np.uint32) << 16)
+                    | (qb[3::4].astype(np.uint32) << 24))
+        MAX_Q   = 1.0 / np.sqrt(2.0)
+        V_MASK  = np.uint32(511)           # (1<<9)-1
+        largest = (combined >> 30).astype(np.int32)
+        rem     = combined.copy()
+        qxyzw   = np.zeros((N, 4), dtype=np.float32)  # [x, y, z, w]
+        sum_sq  = np.zeros(N, dtype=np.float32)
+        for i2 in range(3, -1, -1):
+            not_lg = largest != i2
+            val  = (rem & V_MASK).astype(np.float32)
+            sign = ((rem >> np.uint32(9)) & np.uint32(1)).astype(np.float32)
+            q    = MAX_Q * (val / float(V_MASK))
+            q    = np.where(sign == 0, q, -q)
+            qxyzw[not_lg, i2] = q[not_lg]
+            sum_sq = np.where(not_lg, sum_sq + q * q, sum_sq)
+            rem    = np.where(not_lg, rem >> np.uint32(10), rem)
+        for i2 in range(4):
+            lg = largest == i2
+            qxyzw[lg, i2] = np.sqrt(np.maximum(0.0, 1.0 - sum_sq[lg]))
+        quats = qxyzw[:, [3, 0, 1, 2]]    # xyzw → wxyz
+    else:
+        # v1/v2: 3 bytes xyz, w derived; callback order is (x,y,z,w)
+        qb   = data[offset : offset + N * 3].reshape(N, 3).astype(np.float32)
+        offset += N * 3
+        qxyz = qb / 127.5 - 1.0
+        w    = np.sqrt(np.maximum(0.0, 1.0 - np.sum(qxyz ** 2, axis=1, keepdims=True)))
+        quats = np.concatenate([w, qxyz], axis=1)  # already wxyz
+
     quats /= np.maximum(np.linalg.norm(quats, axis=1, keepdims=True), 1e-8)
 
     # ── write PLY ─────────────────────────────────────────────────────────
     dtype = [
-        ("x", "f4"), ("y", "f4"), ("z", "f4"),
-        ("nx", "f4"), ("ny", "f4"), ("nz", "f4"),
-        ("f_dc_0", "f4"), ("f_dc_1", "f4"), ("f_dc_2", "f4"),
-        ("opacity", "f4"),
-        ("scale_0", "f4"), ("scale_1", "f4"), ("scale_2", "f4"),
-        ("rot_0",   "f4"), ("rot_1",   "f4"), ("rot_2",   "f4"), ("rot_3", "f4"),
+        ("x",     "f4"), ("y",     "f4"), ("z",     "f4"),
+        ("nx",    "f4"), ("ny",    "f4"), ("nz",    "f4"),
+        ("f_dc_0","f4"), ("f_dc_1","f4"), ("f_dc_2","f4"),
+        ("opacity","f4"),
+        ("scale_0","f4"), ("scale_1","f4"), ("scale_2","f4"),
+        ("rot_0",  "f4"), ("rot_1",  "f4"), ("rot_2",  "f4"), ("rot_3","f4"),
     ]
     verts = np.zeros(N, dtype=dtype)
-    verts["x"], verts["y"], verts["z"]                   = positions[:, 0], positions[:, 1], positions[:, 2]
-    verts["f_dc_0"], verts["f_dc_1"], verts["f_dc_2"]    = sh_dc[:, 0],     sh_dc[:, 1],     sh_dc[:, 2]
-    verts["opacity"]                                      = opacities
-    verts["scale_0"], verts["scale_1"], verts["scale_2"] = log_scales[:, 0], log_scales[:, 1], log_scales[:, 2]
-    verts["rot_0"], verts["rot_1"], verts["rot_2"], verts["rot_3"] = quats[:, 0], quats[:, 1], quats[:, 2], quats[:, 3]
+    verts["x"],      verts["y"],      verts["z"]      = positions[:, 0], positions[:, 1], positions[:, 2]
+    verts["f_dc_0"], verts["f_dc_1"], verts["f_dc_2"] = sh_dc[:, 0],     sh_dc[:, 1],     sh_dc[:, 2]
+    verts["opacity"]                                   = opacities
+    verts["scale_0"],verts["scale_1"],verts["scale_2"] = log_scales[:,0], log_scales[:,1], log_scales[:,2]
+    verts["rot_0"],  verts["rot_1"],  verts["rot_2"],  verts["rot_3"] = quats[:,0], quats[:,1], quats[:,2], quats[:,3]
 
     PlyData([PlyElement.describe(verts, "vertex")]).write(ply_path)
     print(f"[spz] Converted {N:,} Gaussians → {ply_path}")

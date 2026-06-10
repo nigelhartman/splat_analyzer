@@ -4,6 +4,7 @@
 *.sogs
 *.ksplat
 *.npy
+*.csv
 __pycache__/
 *.pyc
 *.egg-info/
@@ -11,3 +12,4 @@ __pycache__/
 .env
 /tmp/
 Screenshot*.png
+keys.db

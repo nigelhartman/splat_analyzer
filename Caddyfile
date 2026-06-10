@@ -1,4 +1,4 @@
-splatanalyzer.example.com {
+{$DOMAIN} {
     reverse_proxy worldmodeldata-app:8000
 
     header {
