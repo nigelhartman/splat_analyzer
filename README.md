@@ -126,9 +126,9 @@ Result format:
 
 The pipeline is developed and tested on a **Nebius cloud instance with an NVIDIA L40S (48 GB VRAM)**. A full detection job (180 frames rendered + OWLv2 across all frames) takes approximately 3–5 minutes on this hardware.
 
-**Running on a local computer has not been tested.** Based on observed resource usage, a local machine would need at minimum:
+**Running on a local computer has not been tested.** Measured peak VRAM on the L40S during a real job was **~7 GB** (gsplat rendering peaks at ~1.5 GB, OWLv2 peaks at ~7 GB when both are loaded). Based on this, a local machine would need at minimum:
 
-- **GPU**: NVIDIA RTX 3090 or better (24 GB VRAM). The gsplat renderer and OWLv2 both run on GPU. Smaller cards may hit OOM on large splats or require reducing the number of rendered views.
+- **GPU**: Any NVIDIA GPU with **8 GB VRAM** should work; 12 GB gives comfortable headroom. An RTX 3060 12 GB or better is a reasonable starting point.
 - **RAM**: 16 GB minimum, 32 GB recommended
 - **Disk**: 20 GB free (Docker image + model cache)
 - **CUDA**: 11.8 or 12.x with matching PyTorch build
