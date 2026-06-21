@@ -13,3 +13,10 @@ __pycache__/
 /tmp/
 Screenshot*.png
 keys.db
+# local run output + envs + vendored Metal renderer
+out_*/
+.venv/
+venv/
+third_party/
+*.air
+*.metallib

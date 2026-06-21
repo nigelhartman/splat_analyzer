@@ -1,3 +1,6 @@
+# CUDA / server dependency set — used by the Dockerfile and NVIDIA local installs.
+# On Apple Silicon do NOT use this file (the `gsplat` line is the CUDA build and won't
+# compile on a Mac). Run ./install_mac.sh instead — it installs the Metal renderer.
 fastapi
 uvicorn[standard]
 python-multipart

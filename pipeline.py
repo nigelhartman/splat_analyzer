@@ -23,6 +23,7 @@ from PIL import Image
 from transformers import Owlv2Processor, Owlv2ForObjectDetection
 
 import render_cameras
+from config import PipelineConfig, QUALITY_PRESETS, DEFAULT_QUALITY
 
 
 # ---------------------------------------------------------------------------
@@ -222,13 +223,12 @@ def _run_owlv2(frames_dir: Path, labels: list[str], transforms: dict, scene_radi
 # ---------------------------------------------------------------------------
 
 def run_pipeline(ply_path: str, prompt: str, job_dir: str,
-                 score_threshold: float = 0.12,
-                 min_votes: int = 8,
-                 min_peak_score: float = 0.40) -> list[dict]:
+                 cfg: PipelineConfig | None = None) -> list[dict]:
+    cfg = cfg or PipelineConfig()
     job_dir = Path(job_dir)
 
     print("[pipeline] Step 1: Rendering camera views …")
-    transforms_path = render_cameras.render_views(ply_path, str(job_dir))
+    transforms_path = render_cameras.render_views(ply_path, str(job_dir), cfg)
 
     with open(transforms_path) as f:
         transforms = json.load(f)
@@ -247,7 +247,7 @@ def run_pipeline(ply_path: str, prompt: str, job_dir: str,
 
     print(f"[pipeline] Step 2: Detecting {labels} in {len(transforms['frames'])} frames …")
     raw_detections = _run_owlv2(frames_dir, labels, transforms, scene_radius,
-                                score_threshold=score_threshold)
+                                score_threshold=cfg.score_threshold)
 
     frame_annotations: dict = {}   # frame_idx (str) → [{label, object_idx, box, score}]
 
@@ -260,8 +260,8 @@ def run_pipeline(ply_path: str, prompt: str, job_dir: str,
             raw_detections,
             eps_m=transforms.get("scene_radius", scene_radius) * 0.20,
             max_per_label=3,
-            min_votes=min_votes,
-            min_peak_score=min_peak_score,
+            min_votes=cfg.min_votes,
+            min_peak_score=cfg.min_peak_score,
         )
 
         interactions = []
@@ -306,16 +306,23 @@ def run_pipeline(ply_path: str, prompt: str, job_dir: str,
 
 
 if __name__ == "__main__":
+    _d = PipelineConfig()
     parser = argparse.ArgumentParser()
     parser.add_argument("--ply",              required=True)
     parser.add_argument("--prompt",           required=True)
     parser.add_argument("--job_dir",          required=True)
-    parser.add_argument("--score_threshold",  type=float, default=0.12)
-    parser.add_argument("--min_votes",        type=int,   default=8)
-    parser.add_argument("--min_peak_score",   type=float, default=0.40)
+    parser.add_argument("--quality",          choices=list(QUALITY_PRESETS.keys()),
+                        default=DEFAULT_QUALITY,
+                        help="Camera-coverage preset (controls number of views)")
+    parser.add_argument("--score_threshold",  type=float, default=_d.score_threshold)
+    parser.add_argument("--min_votes",        type=int,   default=_d.min_votes)
+    parser.add_argument("--min_peak_score",   type=float, default=_d.min_peak_score)
     args = parser.parse_args()
-    result = run_pipeline(args.ply, args.prompt, args.job_dir,
-                          score_threshold=args.score_threshold,
-                          min_votes=args.min_votes,
-                          min_peak_score=args.min_peak_score)
+    cfg = PipelineConfig.from_overrides(
+        quality=args.quality,
+        score_threshold=args.score_threshold,
+        min_votes=args.min_votes,
+        min_peak_score=args.min_peak_score,
+    )
+    result = run_pipeline(args.ply, args.prompt, args.job_dir, cfg)
     print(json.dumps(result, indent=2))

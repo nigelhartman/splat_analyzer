@@ -57,6 +57,8 @@ if command -v rsync &>/dev/null; then
     "${SCRIPT_DIR}/pipeline.py" \
     "${SCRIPT_DIR}/render_cameras.py" \
     "${SCRIPT_DIR}/server.py" \
+    "${SCRIPT_DIR}/config.py" \
+    "${SCRIPT_DIR}/run_local.py" \
     "${SCRIPT_DIR}/requirements.txt" \
     "${SCRIPT_DIR}/Dockerfile" \
     "${SCRIPT_DIR}/.dockerignore" \
@@ -68,7 +70,7 @@ if command -v rsync &>/dev/null; then
     "${SCRIPT_DIR}/webapp/" \
     "${REMOTE}:${APP_DIR}/webapp/"
 else
-  for f in pipeline.py render_cameras.py server.py requirements.txt Dockerfile .dockerignore Caddyfile; do
+  for f in pipeline.py render_cameras.py server.py config.py run_local.py requirements.txt Dockerfile .dockerignore Caddyfile; do
     scp -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${SCRIPT_DIR}/${f}" "${REMOTE}:${APP_DIR}/${f}"
   done
   for f in webapp/index.html webapp/debug.html webapp/admin.html; do

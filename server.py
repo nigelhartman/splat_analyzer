@@ -10,6 +10,8 @@ from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from config import PipelineConfig, QUALITY_PRESETS
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -124,22 +126,25 @@ async def _cleanup_loop():
 
 # ── Pipeline runner ───────────────────────────────────────────────────────────
 async def _run_pipeline_queued(job_id: str, ply_path: Path, prompt: str, job_dir: Path,
-                               score_threshold: float, min_votes: int, min_peak_score: float):
+                               quality: str, score_threshold: float,
+                               min_votes: int, min_peak_score: float):
     """Wait for the semaphore (one job at a time), then run the pipeline."""
     async with _JOB_SEMAPHORE:
         if job_id in JOB_QUEUE_ORDER:
             JOB_QUEUE_ORDER.remove(job_id)
         await _run_pipeline(job_id, ply_path, prompt, job_dir,
-                            score_threshold, min_votes, min_peak_score)
+                            quality, score_threshold, min_votes, min_peak_score)
 
 async def _run_pipeline(job_id: str, ply_path: Path, prompt: str, job_dir: Path,
-                        score_threshold: float, min_votes: int, min_peak_score: float):
+                        quality: str, score_threshold: float,
+                        min_votes: int, min_peak_score: float):
     JOB_STATUS[job_id] = "running"
-    logger.info(f"[{job_id}] Running pipeline prompt={prompt!r} "
+    logger.info(f"[{job_id}] Running pipeline prompt={prompt!r} quality={quality} "
                 f"score_threshold={score_threshold} min_votes={min_votes} min_peak_score={min_peak_score}")
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "pipeline.py",
         "--ply", str(ply_path), "--prompt", prompt, "--job_dir", str(job_dir),
+        "--quality", quality,
         "--score_threshold", str(score_threshold),
         "--min_votes", str(min_votes),
         "--min_peak_score", str(min_peak_score),
@@ -201,9 +206,14 @@ async def admin_html(): return FileResponse(WEBAPP_DIR / "admin.html")
 async def detect(
     file:             UploadFile = File(...,  description=".ply or .spz Gaussian Splat file"),
     prompt:           str        = Form(...,  description="Comma-separated object labels"),
-    score_threshold:  float      = Form(0.12, description="OWLv2 per-frame confidence threshold (0–1)"),
-    min_votes:        int        = Form(8,    description="Minimum frames a cluster must appear in"),
-    min_peak_score:   float      = Form(0.40, description="Minimum best-frame score for a cluster to be kept (0–1)"),
+    quality:          str        = Form(PipelineConfig().quality,
+                                         description="Camera-coverage preset: low | medium | high"),
+    score_threshold:  float      = Form(PipelineConfig().score_threshold,
+                                         description="OWLv2 per-frame confidence threshold (0–1)"),
+    min_votes:        int        = Form(PipelineConfig().min_votes,
+                                         description="Minimum frames a cluster must appear in"),
+    min_peak_score:   float      = Form(PipelineConfig().min_peak_score,
+                                         description="Minimum best-frame score for a cluster to be kept (0–1)"),
     api_key:          str        = Depends(require_api_key),
 ):
     """Upload a `.ply` or `.spz` file and a comma-separated prompt. Returns `job_id` immediately.
@@ -211,6 +221,9 @@ async def detect(
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in (".ply", ".spz"):
         raise HTTPException(status_code=400, detail="Only .ply and .spz files are supported")
+    if quality not in QUALITY_PRESETS:
+        raise HTTPException(status_code=400,
+                            detail=f"quality must be one of {sorted(QUALITY_PRESETS)}")
     job_id   = str(uuid.uuid4())
     job_dir  = WORK_DIR / job_id
     job_dir.mkdir(parents=True)
@@ -223,9 +236,9 @@ async def detect(
     JOB_STATUS[job_id] = "pending"
     JOB_QUEUE_ORDER.append(job_id)
     asyncio.create_task(_run_pipeline_queued(job_id, scene_path, prompt, job_dir,
-                                             score_threshold, min_votes, min_peak_score))
+                                             quality, score_threshold, min_votes, min_peak_score))
     logger.info(f"[{job_id}] Queued (position {len(JOB_QUEUE_ORDER)}) — "
-                f"file={file.filename!r} prompt={prompt!r} "
+                f"file={file.filename!r} prompt={prompt!r} quality={quality} "
                 f"score_threshold={score_threshold} min_votes={min_votes} min_peak_score={min_peak_score}")
     return {"job_id": job_id, "status": "pending", "queue_position": len(JOB_QUEUE_ORDER)}
 

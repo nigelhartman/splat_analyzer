@@ -25,8 +25,10 @@ from pathlib import Path
 import numpy as np
 import torch
 import imageio.v2 as imageio
+from scipy.spatial import cKDTree
 
-from gsplat import rasterization
+from config import PipelineConfig, QUALITY_PRESETS, DEFAULT_QUALITY
+from renderers import get_renderer
 
 # Number of camera views rendered in a single GPU call (RGB pass).
 # Increase if you have lots of VRAM; decrease if you hit OOM.
@@ -170,7 +172,13 @@ def _convert_spz_to_ply(spz_path: str, ply_path: str) -> None:
 # PLY loader
 # ---------------------------------------------------------------------------
 
-def _load_ply_gaussians(ply_path: str):
+def _load_ply_arrays(ply_path: str) -> dict:
+    """Load raw Gaussian arrays from a .ply as numpy (no device, no activations).
+
+    The renderer backend applies activations and moves to its device via prepare().
+    Keys: means (N,3), quats (N,4 wxyz), scales (N,3 log), opacities (N, logit),
+    sh_coeffs (N,K,3), sh_degree (int).
+    """
     from plyfile import PlyData
 
     plydata = PlyData.read(ply_path)
@@ -208,16 +216,13 @@ def _load_ply_gaussians(ply_path: str):
     total_sh = sh_coeffs.shape[1]
     sh_degree = int(math.isqrt(total_sh)) - 1
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     return {
-        "means":     torch.tensor(means,     device=device),
-        "quats":     torch.tensor(quats,     device=device),
-        "scales":    torch.exp(torch.tensor(scales,    device=device)),
-        "opacities": torch.sigmoid(torch.tensor(opacities, device=device)),
-        "sh":        torch.tensor(sh_coeffs, device=device),
+        "means":     means,
+        "quats":     quats,
+        "scales":    scales,
+        "opacities": opacities,
+        "sh_coeffs": sh_coeffs,
         "sh_degree": sh_degree,
-        "device":    device,
     }
 
 
@@ -225,11 +230,11 @@ def _load_ply_gaussians(ply_path: str):
 # Scene bounds
 # ---------------------------------------------------------------------------
 
-def _scene_bounds(means: torch.Tensor):
-    center = means.mean(dim=0)
-    dists = torch.norm(means - center, dim=1)
-    radius = dists.quantile(0.80).item()
-    return center.cpu().numpy(), max(radius, 0.5)
+def _scene_bounds(means_np: np.ndarray):
+    center = means_np.mean(axis=0)
+    dists = np.linalg.norm(means_np - center, axis=1)
+    radius = float(np.quantile(dists, 0.80))
+    return center, max(radius, 0.5)
 
 
 # ---------------------------------------------------------------------------
@@ -256,11 +261,15 @@ def _lookat(eye: np.ndarray, target: np.ndarray, up: np.ndarray = None) -> np.nd
     return c2w
 
 
-def _generate_camera_positions(center: np.ndarray, radius: float,
-                               n_positions: int, seed: int = 42) -> list:
+_SUBSAMPLE_CAP = 300_000   # KDTree is built on at most this many splats
+
+
+def _legacy_circle_positions(center: np.ndarray, radius: float,
+                             n_positions: int, seed: int = 42) -> list:
     """
-    Spread camera positions around the interior of the scene at different
-    angles and heights so multi-view triangulation is possible.
+    Legacy placement: spread positions on a circle around the scene centre at
+    varying angles and heights. Kept as a last-resort fallback for the
+    density-aware sampler so rendering never fails to produce positions.
     """
     rng = np.random.default_rng(seed)
     positions = []
@@ -276,6 +285,130 @@ def _generate_camera_positions(center: np.ndarray, radius: float,
         ], dtype=np.float32)
         positions.append(pos)
     return positions
+
+
+def _generate_camera_positions(means_np: np.ndarray, n_positions: int,
+                               cfg: PipelineConfig):
+    """
+    Density-aware, blue-noise camera placement.
+
+    Cameras are sampled inside a robust bounding box of the splat point cloud,
+    spread apart (Poisson-disk minimum separation) and biased AWAY from both the
+    dense interior of objects and the empty void — a band-pass on local splat
+    density that favours the "content-adjacent shell" around objects.
+
+    Returns (positions (P,3) float32 ndarray, look_targets (P,3) float32 ndarray).
+    `look_targets` points each camera at its nearest content centroid; it is
+    stored in transforms.json for the debug viewer / future content orientation.
+
+    The whole computation runs on CPU (numpy + scipy) so it is GPU-optional.
+    """
+    rng = np.random.default_rng(cfg.seed)
+    means_np = np.asarray(means_np, dtype=np.float64)
+
+    # ── 1. Robust bounding box (percentiles reject floater outliers) ────────
+    lo = np.percentile(means_np, cfg.bbox_pct_lo, axis=0)
+    hi = np.percentile(means_np, cfg.bbox_pct_hi, axis=0)
+    diag = float(np.linalg.norm(hi - lo))
+    if diag <= 0.0:
+        diag = 1.0
+
+    # ── 2. KDTree on a (possibly subsampled) point cloud ────────────────────
+    if len(means_np) > _SUBSAMPLE_CAP:
+        idx = rng.choice(len(means_np), _SUBSAMPLE_CAP, replace=False)
+        sub = means_np[idx]
+        subsample_frac = _SUBSAMPLE_CAP / len(means_np)
+    else:
+        sub = means_np
+        subsample_frac = 1.0
+    tree = cKDTree(sub)
+    r_density = cfg.density_radius_frac * diag
+
+    def density(pts):
+        # Counts only (no list materialization), rescaled to full-cloud count.
+        counts = tree.query_ball_point(pts, r=r_density, return_length=True)
+        return np.asarray(counts, dtype=np.float64) / subsample_frac
+
+    # ── 3. Sample with density-weighted rejection + Poisson-disk spacing ────
+    def sample_round(alpha, min_sep, eps=1e-9):
+        r_min = min_sep * diag
+        accepted = []
+        # Candidate pool, scored in one batched density call.
+        M = max(40 * n_positions, 200)
+        cands = rng.uniform(lo, hi, size=(M, 3))
+        dens = density(cands)
+        d_ref = float(np.median(dens)) if dens.size else 0.0
+        order = rng.permutation(M)
+        for ci in order:
+            if len(accepted) >= n_positions:
+                break
+            d = dens[ci]
+            # Gaussian band-pass: peaks at d≈d_ref, →0 when buried (d≫d_ref)
+            # and in empty void (d→0).
+            p_accept = math.exp(-((d - d_ref) / (alpha * d_ref + eps)) ** 2)
+            if rng.random() >= p_accept:
+                continue
+            c = cands[ci]
+            if accepted:
+                dmin = np.min(np.linalg.norm(np.asarray(accepted) - c, axis=1))
+                if dmin < r_min:
+                    continue
+            accepted.append(c)
+        return accepted
+
+    accepted = sample_round(cfg.bandpass_alpha, cfg.min_sep_frac)
+
+    # ── 4. Relax up to 3 rounds if we couldn't place enough cameras ─────────
+    relax = 0
+    while len(accepted) < n_positions and relax < 3:
+        relax += 1
+        more = sample_round(cfg.bandpass_alpha * (1.0 + relax),
+                            cfg.min_sep_frac / (2 ** relax))
+        # Merge while keeping separation against what we already have.
+        r_min = (cfg.min_sep_frac / (2 ** relax)) * diag
+        for c in more:
+            if len(accepted) >= n_positions:
+                break
+            if not accepted or np.min(np.linalg.norm(np.asarray(accepted) - c, axis=1)) >= r_min:
+                accepted.append(c)
+
+    # ── 5. Farthest-point fill (ignore density) to guarantee the count ──────
+    if len(accepted) < n_positions:
+        pool = rng.uniform(lo, hi, size=(max(40 * n_positions, 200), 3))
+        while len(accepted) < n_positions and len(pool) > 0:
+            if accepted:
+                d = np.min(
+                    np.linalg.norm(pool[:, None, :] - np.asarray(accepted)[None, :, :], axis=2),
+                    axis=1,
+                )
+                pick = int(np.argmax(d))
+            else:
+                pick = 0
+            accepted.append(pool[pick])
+            pool = np.delete(pool, pick, axis=0)
+
+    # ── 6. Absolute last resort: legacy circle ──────────────────────────────
+    if len(accepted) < n_positions:
+        center = means_np.mean(axis=0)
+        radius = max(diag * 0.4, 0.5)
+        print(f"[render] WARNING: density placement found only {len(accepted)}/"
+              f"{n_positions} positions — filling rest with legacy circle.")
+        for p in _legacy_circle_positions(center, radius, n_positions, cfg.seed):
+            if len(accepted) >= n_positions:
+                break
+            accepted.append(np.asarray(p, dtype=np.float64))
+
+    positions = np.asarray(accepted[:n_positions], dtype=np.float32)
+
+    # ── 7. Look targets: aim each camera at its nearest content centroid ────
+    k = min(64, len(sub))
+    look_targets = np.zeros_like(positions)
+    for i, p in enumerate(positions):
+        _, nn_idx = tree.query(p.astype(np.float64), k=k)
+        nn_idx = np.atleast_1d(nn_idx)
+        look_targets[i] = sub[nn_idx].mean(axis=0).astype(np.float32)
+
+    return positions, look_targets
 
 
 def _build_poses(positions: list, n_azimuth: int, n_elevation: int,
@@ -335,9 +468,7 @@ def _write_frame(frames_dir: Path, idx: int,
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def render_views(ply_path: str, job_dir: str,
-                 width: int = 512, height: int = 512,
-                 n_positions: int = 10, n_azimuth: int = 6, n_elevation: int = 3):
+def render_views(ply_path: str, job_dir: str, cfg: PipelineConfig | None = None):
     """
     Render RGB + depth from multiple camera positions and write:
       <job_dir>/frames/frame_XXXX.png
@@ -345,10 +476,14 @@ def render_views(ply_path: str, job_dir: str,
       <job_dir>/frames/depth_XXXX.npy   (raw float, for pipeline depth lookup)
       <job_dir>/transforms.json
 
-    RGB frames are rasterized in batches of RENDER_BATCH so the GPU stays
-    continuously loaded. Disk writes run in a thread pool overlapping with
-    the next GPU batch.
+    Camera placement, counts and resolution are taken from `cfg`
+    (a PipelineConfig). RGB frames are rasterized in batches of RENDER_BATCH so
+    the GPU stays continuously loaded. Disk writes run in a thread pool
+    overlapping with the next GPU batch.
     """
+    cfg = cfg or PipelineConfig()
+    width, height = cfg.width, cfg.height
+    n_positions, n_azimuth, n_elevation = cfg.n_positions, cfg.n_azimuth, cfg.n_elevation
     job_dir = Path(job_dir)
     frames_dir = job_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
@@ -358,11 +493,15 @@ def render_views(ply_path: str, job_dir: str,
         _convert_spz_to_ply(ply_path, converted)
         ply_path = converted
 
+    renderer = get_renderer(cfg.renderer)
     print(f"[render] Loading PLY: {ply_path}")
-    g = _load_ply_gaussians(ply_path)
-    device = g["device"]
+    arrays = _load_ply_arrays(ply_path)
+    means_np = arrays["means"]
+    g = renderer.prepare(arrays)
+    device = renderer.device
+    print(f"[render] Renderer: {renderer.name}  (device={device})")
 
-    center, radius = _scene_bounds(g["means"])
+    center, radius = _scene_bounds(means_np)
     print(f"[render] Scene center={center.round(3)}, radius={radius:.3f}")
 
     # Camera intrinsics — 130° horizontal FoV
@@ -376,7 +515,7 @@ def render_views(ply_path: str, job_dir: str,
         dtype=torch.float32, device=device,
     )
 
-    cam_positions = _generate_camera_positions(center, radius, n_positions)
+    cam_positions, look_targets = _generate_camera_positions(means_np, n_positions, cfg)
     poses, position_indices = _build_poses(cam_positions, n_azimuth, n_elevation)
     total = len(poses)
     print(f"[render] {n_positions} positions × {n_azimuth} azimuth × {n_elevation} elevation = {total} views"
@@ -386,22 +525,16 @@ def render_views(ply_path: str, job_dir: str,
     all_c2w = torch.tensor(np.stack(poses), device=device, dtype=torch.float32)  # (T, 4, 4)
     all_w2c = torch.linalg.inv(all_c2w)                                           # (T, 4, 4)
 
-    # Homogeneous Gaussian means for depth z_cam = (w2c @ means_h.T)[2]
-    N = g["means"].shape[0]
-    means_h = torch.cat(
-        [g["means"], torch.ones(N, 1, device=device)], dim=1
-    ).contiguous()  # (N, 4)
-
     transforms = {
         "fl_x": fl_x, "fl_y": fl_y, "cx": cx, "cy": cy,
         "w": width, "h": height,
         "scene_center": center.tolist(),
         "scene_radius": float(radius),
         "camera_positions": [p.tolist() for p in cam_positions],
+        "look_targets": [t.tolist() for t in look_targets],
         "frames": [],
     }
 
-    SH_C0 = 0.28209479177387814
     futures = []
 
     with ThreadPoolExecutor(max_workers=IO_WORKERS) as pool:
@@ -411,45 +544,11 @@ def render_views(ply_path: str, job_dir: str,
             print(f"[render]  {b0}/{total} …")
 
             w2c_batch = all_w2c[b0:b1].contiguous()                        # (B, 4, 4)
-            K_batch   = K.unsqueeze(0).expand(B, -1, -1).contiguous()      # (B, 3, 3)
 
-            # ── Batched RGB render ─────────────────────────────────────────────
-            # Single GPU rasterization call for all B views simultaneously.
-            rgb_out, _, _ = rasterization(
-                means=g["means"], quats=g["quats"], scales=g["scales"],
-                opacities=g["opacities"], colors=g["sh"],
-                viewmats=w2c_batch, Ks=K_batch,
-                width=width, height=height,
-                sh_degree=g["sh_degree"],
-                near_plane=0.01, far_plane=1000.0,
-            )
-            # Move all B frames to CPU in one transfer
-            rgb_cpu = (rgb_out.clamp(0, 1).cpu().numpy() * 255).astype(np.uint8)  # (B, H, W, 3)
-
-            # ── Depth renders ──────────────────────────────────────────────────
-            # Camera-space Z for every Gaussian across all B views in one bmm:
-            # (B, 4, 4) @ (B, 4, N) → (B, 4, N) → row 2 → (B, N)
-            z_batch = torch.bmm(
-                w2c_batch,
-                means_h.T.unsqueeze(0).expand(B, -1, -1).contiguous(),
-            )[:, 2, :].clamp(min=0.01).contiguous()  # (B, N)
-
-            # Depth rasterization is view-dependent (z_cam varies per view),
-            # so we call rasterization once per view — but z_cam is already on GPU.
-            depth_cpu = []
-            for bi in range(B):
-                dc = z_batch[bi].view(-1, 1, 1).expand(-1, 1, 3).contiguous()  # (N, 1, 3)
-                dr, _, _ = rasterization(
-                    means=g["means"], quats=g["quats"], scales=g["scales"],
-                    opacities=g["opacities"], colors=dc,
-                    viewmats=w2c_batch[bi:bi+1], Ks=K_batch[bi:bi+1],
-                    width=width, height=height, sh_degree=0,
-                    near_plane=0.01, far_plane=1000.0,
-                )
-                dm = np.maximum(
-                    (dr[0, :, :, 0].cpu().numpy() - 0.5) / SH_C0, 0.0
-                ).astype(np.float32)
-                depth_cpu.append(dm)
+            # Backend renders this batch to RGB + per-view depth. Same contract
+            # whether gsplat (CUDA) or gsplat-metal (Apple MPS).
+            rgb_cpu   = renderer.render_rgb(g, w2c_batch, K, width, height)    # (B,H,W,3) uint8
+            depth_cpu = renderer.render_depth(g, w2c_batch, K, width, height)  # list of (H,W) f32
 
             # ── Submit I/O to thread pool (overlaps with next GPU batch) ───────
             for bi, idx in enumerate(range(b0, b1)):
@@ -478,13 +577,13 @@ def render_views(ply_path: str, job_dir: str,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ply",         required=True)
-    parser.add_argument("--job_dir",     required=True)
-    parser.add_argument("--width",       type=int, default=512)
-    parser.add_argument("--height",      type=int, default=512)
-    parser.add_argument("--n_positions", type=int, default=5)
-    parser.add_argument("--n_azimuth",   type=int, default=6)
-    parser.add_argument("--n_elevation", type=int, default=3)
+    parser.add_argument("--ply",     required=True)
+    parser.add_argument("--job_dir", required=True)
+    parser.add_argument("--quality", choices=list(QUALITY_PRESETS.keys()),
+                        default=DEFAULT_QUALITY)
+    parser.add_argument("--width",   type=int, default=512)
+    parser.add_argument("--height",  type=int, default=512)
     args = parser.parse_args()
-    render_views(args.ply, args.job_dir, args.width, args.height,
-                 args.n_positions, args.n_azimuth, args.n_elevation)
+    cfg = PipelineConfig.from_overrides(quality=args.quality,
+                                        width=args.width, height=args.height)
+    render_views(args.ply, args.job_dir, cfg)

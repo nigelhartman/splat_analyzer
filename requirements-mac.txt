@@ -1,0 +1,14 @@
+# Apple Silicon (Metal / MPS) dependency set for LOCAL CLI use.
+# Install via ./install_mac.sh — it installs these AND builds the Metal renderer
+# (gsplat-mps), which is NOT listed here because it needs a special build (see the script).
+#
+# Do NOT use requirements.txt on a Mac: it pins the CUDA gsplat, which cannot build here.
+torch
+torchvision
+numpy
+plyfile
+imageio
+scipy
+opencv-python-headless
+Pillow
+transformers>=4.37,<4.51

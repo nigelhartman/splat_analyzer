@@ -123,13 +123,13 @@
     /* ── Form fields ── */
     .field { margin-top: 16px; }
     .field label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; }
-    .field input[type=text], .field input[type=number] {
+    .field input[type=text], .field input[type=number], .field select {
       width: 100%; padding: 8px 11px; background: var(--surface);
       border: 1px solid var(--border); border-radius: var(--radius);
       color: var(--text); font-size: 13px; outline: none;
       transition: border-color 0.12s, box-shadow 0.12s;
     }
-    .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(9,105,218,0.1); }
+    .field input:focus, .field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(9,105,218,0.1); }
     .field input::placeholder { color: var(--text-muted); }
     .fields-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 16px; }
     .fields-row .field { margin-top: 0; }
@@ -302,6 +302,15 @@
         <input type="text" id="prompt-input"
                placeholder="e.g. sofa, chair, television, table"
                value="television, sofa, armchair, chair">
+      </div>
+
+      <div class="field">
+        <label for="quality-input">Camera coverage (quality)</label>
+        <select id="quality-input">
+          <option value="low">Low — 24 views (fastest)</option>
+          <option value="medium" selected>Medium — 90 views (balanced)</option>
+          <option value="high">High — 192 views (most thorough)</option>
+        </select>
       </div>
 
       <div class="fields-row">
@@ -499,6 +508,7 @@
       const form = new FormData();
       form.append("file",            selectedFile);
       form.append("prompt",          document.getElementById("prompt-input").value);
+      form.append("quality",         document.getElementById("quality-input").value);
       form.append("score_threshold", document.getElementById("score-threshold-input").value);
       form.append("min_votes",       document.getElementById("min-votes-input").value);
       form.append("min_peak_score",  document.getElementById("min-peak-score-input").value);

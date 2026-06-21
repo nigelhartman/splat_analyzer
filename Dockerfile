@@ -22,7 +22,7 @@ RUN grep -vE '^(torch|torchvision)([>=<!]|$)' requirements.txt \
     | pip install --no-cache-dir -r /dev/stdin
 
 # Application code (rebuilt on every deploy)
-COPY server.py pipeline.py render_cameras.py ./
+COPY server.py pipeline.py render_cameras.py config.py run_local.py ./
 COPY webapp/ ./webapp/
 
 # Persistent data:
