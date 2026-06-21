@@ -220,3 +220,12 @@ splat_analyzer/
 ## Tech stack
 
 Python · FastAPI · gsplat / gsplat-mps · OWLv2 · PyTorch · Three.js · SparkJS · Docker · Caddy
+
+---
+
+## Acknowledgements
+
+- **[Boxer](https://github.com/facebookresearch/boxer)** (Meta FAIR) — the inspiration for this project. Boxer lifts open-vocabulary 2D detections (OWLv2) into fused 3D bounding boxes from Project Aria captures. Splat Analyzer adapts that idea to Gaussian Splats: rather than Aria `.vrs` + BoxerNet, it renders synthetic views of any `.ply`/`.spz` splat and lifts the 2D boxes with camera-projection geometry.
+- **[OWLv2](https://huggingface.co/google/owlv2-base-patch16-ensemble)** (Google) — open-vocabulary 2D object detection.
+- **[gsplat](https://github.com/nerfstudio-project/gsplat)** (Nerfstudio) and **[gsplat-mps](https://github.com/iffyloop/gsplat-mps)** — Gaussian Splat rasterization on CUDA and Apple Metal.
+- **SparkJS** and **Three.js** — in-browser splat rendering for the 3D viewer.
