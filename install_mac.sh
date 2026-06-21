@@ -70,4 +70,4 @@ echo "    python run_local.py --ply your_scene.ply --prompt \"chair, table\" --q
 echo ""
 echo "Notes:"
 echo "  • Renderer is auto-selected (renderer=auto → gsplat-metal on Apple Silicon)."
-echo "  • OWLv2 detection runs on CPU here, so it is slower than a CUDA box — start with --quality low."
+echo "  • Detection (OWLv2) runs on the Apple GPU (MPS); set WMD_DEVICE=cpu to force CPU if needed."

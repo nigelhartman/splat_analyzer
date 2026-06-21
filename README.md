@@ -135,7 +135,7 @@ python run_local.py --ply scene.ply --prompt "chair, table" --quality low
 
 Notes:
 - The renderer is selected automatically (`renderer=auto` → `gsplat-metal` on Apple Silicon).
-- **OWLv2 detection runs on CPU** on Mac, so it is slower than a CUDA box — start with `--quality low`.
+- Rendering **and OWLv2 detection both run on the Apple GPU** (Metal/MPS). If you hit an "op not implemented for MPS" error, set `WMD_DEVICE=cpu` to force CPU detection. Still slower than a CUDA box — start with `--quality low`.
 - gsplat-mps is **AGPLv3** and an unmaintained fork; it is installed separately by the script (not bundled). Render quality is close to, but not identical to, the CUDA path.
 
 ---
