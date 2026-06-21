@@ -169,10 +169,16 @@ curl https://your-domain.com/api/v1/jobs/<job_id>/result -H "X-API-Key: wmd_..."
 
 ---
 
-## Supported formats
+## Supported formats & splats
+
+Works with **virtually any standard Gaussian Splat** — `.ply` or `.spz`:
 
 - **`.ply`** — standard 3DGS (Nerfstudio, Gaussian Splatting, gsplat)
 - **`.spz`** — Niantic / World Labs compressed format (v1–v3)
+
+Tested successfully with splats from **World Labs** and **XGRIDS**, among others.
+
+> ⚠️ **Check orientation first.** Make sure your splat is **right-side up** before running. Some exporters flip the vertical axis — if the scene loads upside down, re-orient it first, otherwise camera placement and detections will be off.
 
 ---
 
@@ -223,9 +229,28 @@ Python · FastAPI · gsplat / gsplat-mps · OWLv2 · PyTorch · Three.js · Spar
 
 ---
 
-## Acknowledgements
+## License
+
+MIT — see [LICENSE.md](LICENSE.md).
+
+---
+
+## Acknowledgements & Credits
+
+Built on the shoulders of:
 
 - **[Boxer](https://github.com/facebookresearch/boxer)** (Meta FAIR) — the inspiration for this project. Boxer lifts open-vocabulary 2D detections (OWLv2) into fused 3D bounding boxes from Project Aria captures. Splat Analyzer adapts that idea to Gaussian Splats: rather than Aria `.vrs` + BoxerNet, it renders synthetic views of any `.ply`/`.spz` splat and lifts the 2D boxes with camera-projection geometry.
 - **[OWLv2](https://huggingface.co/google/owlv2-base-patch16-ensemble)** (Google) — open-vocabulary 2D object detection.
 - **[gsplat](https://github.com/nerfstudio-project/gsplat)** (Nerfstudio) and **[gsplat-mps](https://github.com/iffyloop/gsplat-mps)** — Gaussian Splat rasterization on CUDA and Apple Metal.
 - **SparkJS** and **Three.js** — in-browser splat rendering for the 3D viewer.
+
+### Check out our other kits
+
+- [SensAI Kits](https://github.com/SensAIHackademy/SensAIKits) — context-aware AI templates
+- [World Model Kits](https://github.com/SensAIHackademy/SensAIWorldModelKits) — WebXR, Unity, Unreal templates
+- [PICO Kits](https://github.com/SensAIHackademy/SensAI-PICO-Kits) — world models + voice command templates
+
+Explore [SensAI Hacks](https://sensaihack.com) and connect with a community of creators and innovators.
+Visit our [Knowledge Hub](https://xrbootcamp.notion.site/SensAI-Knowledge-Hub-21f0095e34d880ec9826d9749ae56619) for curated resources.
+
+Powered by **SensAI Hackademy**.

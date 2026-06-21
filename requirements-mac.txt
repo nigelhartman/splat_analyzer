@@ -3,12 +3,13 @@
 # (gsplat-mps), which is NOT listed here because it needs a special build (see the script).
 #
 # Do NOT use requirements.txt on a Mac: it pins the CUDA gsplat, which cannot build here.
-torch
-torchvision
-numpy
-plyfile
-imageio
-scipy
-opencv-python-headless
-Pillow
-transformers>=4.37,<4.51
+# Versions pinned to a tested Apple Silicon setup (M-series, Python 3.12).
+torch==2.12.1
+torchvision==0.27.1
+numpy==2.4.6
+plyfile==1.1.4
+imageio==2.37.3
+scipy==1.18.0
+opencv-python-headless==4.13.0.92
+Pillow==12.2.0
+transformers==4.50.3
