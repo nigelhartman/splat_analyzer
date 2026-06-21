@@ -1,5 +1,7 @@
 # Splat Analyzer
 
+https://github.com/user-attachments/assets/9a60e986-172f-4ac9-a47d-52a0f44c5017
+
 Find objects in a 3D Gaussian Splat — **no manual annotation, no training**.
 
 Give it a splat file (`.ply` or `.spz`) and a plain-English prompt like `"chair, table, monitor"`, and it returns a 3D bounding box (position + size) for each object it finds — ready to use as interaction zones in WebXR, games, or robotics.
