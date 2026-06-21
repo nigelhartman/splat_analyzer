@@ -301,6 +301,13 @@
       </svg>
       API Keys
     </button>
+    <button class="nav-item" data-view="settings" id="nav-settings">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      Settings
+    </button>
   </aside>
 
   <div id="content-area">
@@ -391,6 +398,36 @@
       </div>
     </div>
 
+    <!-- ── Settings view ── -->
+    <div id="view-settings" style="display:none">
+      <div class="view-title-row"><span class="view-title">Settings</span></div>
+      <div class="card" style="max-width:480px">
+        <div class="card-header">
+          <h2>Change admin password</h2>
+          <p>Updates the password used to sign in to this admin panel.</p>
+        </div>
+        <div class="card-body">
+          <form id="pw-form">
+            <div class="form-field">
+              <label for="cur-pw">Current password</label>
+              <input class="form-input" type="password" id="cur-pw" autocomplete="current-password">
+            </div>
+            <div class="form-field">
+              <label for="new-pw">New password</label>
+              <input class="form-input" type="password" id="new-pw" autocomplete="new-password" placeholder="at least 8 characters">
+            </div>
+            <div class="form-field">
+              <label for="new-pw2">Confirm new password</label>
+              <input class="form-input" type="password" id="new-pw2" autocomplete="new-password">
+            </div>
+            <button class="btn-primary" type="submit" id="pw-btn">Update password</button>
+            <div class="error-msg" id="pw-error"></div>
+            <div class="error-msg" id="pw-ok" style="background:var(--success-bg);border-color:rgba(26,127,55,0.3);color:var(--success)"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -420,6 +457,7 @@
   function showView(name) {
     document.getElementById("view-dashboard").style.display = name === "dashboard" ? "" : "none";
     document.getElementById("view-apikeys").style.display   = name === "apikeys"   ? "" : "none";
+    document.getElementById("view-settings").style.display  = name === "settings"  ? "" : "none";
     document.querySelectorAll(".nav-item").forEach(el => {
       el.classList.toggle("active", el.dataset.view === name);
     });
@@ -430,6 +468,7 @@
       clearInterval(statsTimer);
       statsTimer = null;
       if (name === "apikeys") loadKeys();
+      if (name === "settings") resetPwForm();
     }
   }
 
@@ -717,6 +756,48 @@
   }
 
   refreshBtn.addEventListener("click", loadKeys);
+
+  // ── Change password ───────────────────────────────────────────────────────
+  const pwForm  = document.getElementById("pw-form");
+  const pwBtn   = document.getElementById("pw-btn");
+  const pwError = document.getElementById("pw-error");
+  const pwOk    = document.getElementById("pw-ok");
+
+  function resetPwForm() {
+    pwForm.reset();
+    pwError.classList.remove("show");
+    pwOk.classList.remove("show");
+  }
+
+  pwForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    pwError.classList.remove("show"); pwOk.classList.remove("show");
+    const cur = document.getElementById("cur-pw").value;
+    const np  = document.getElementById("new-pw").value;
+    const np2 = document.getElementById("new-pw2").value;
+    if (np.length < 8) { pwError.textContent = "New password must be at least 8 characters."; pwError.classList.add("show"); return; }
+    if (np !== np2)    { pwError.textContent = "New passwords do not match."; pwError.classList.add("show"); return; }
+    pwBtn.disabled = true; pwBtn.textContent = "Updating…";
+    try {
+      const res = await fetch("/api/v1/admin/change_password", {
+        method: "POST", headers: authHdr(),
+        body: JSON.stringify({ current_password: cur, new_password: np }),
+      });
+      if (!res.ok) {
+        // 401 here usually means a wrong current password — do NOT sign the admin out.
+        const msg = (await res.json().catch(() => ({}))).detail || ("Failed (HTTP " + res.status + ")");
+        pwError.textContent = msg; pwError.classList.add("show");
+        return;
+      }
+      pwForm.reset();
+      pwOk.textContent = "Password updated.";
+      pwOk.classList.add("show");
+    } catch (err) {
+      pwError.textContent = "Failed: " + err.message; pwError.classList.add("show");
+    } finally {
+      pwBtn.disabled = false; pwBtn.textContent = "Update password";
+    }
+  });
 
   function escHtml(s) {
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");

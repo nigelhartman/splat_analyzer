@@ -175,6 +175,7 @@ sudo docker run -d \\
   -v worldmodeldata-jobs:/tmp/workshop_jobs \\
   -e ADMIN_USER="\${ADMIN_USER}" \\
   -e ADMIN_PASSWORD="\${ADMIN_PASSWORD}" \\
+  -e DB_PATH="/data/keys.db" \\
   ${IMAGE}
 
 echo "  Container started: \$(sudo docker inspect ${CONTAINER} --format '{{.Id}}' | head -c 12)"

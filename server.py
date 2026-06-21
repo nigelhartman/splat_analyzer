@@ -1,5 +1,5 @@
 """WorldModelData API — v1.0.0"""
-import os, sys, uuid, json, time, shutil, sqlite3, secrets, logging, asyncio, zipfile
+import os, sys, uuid, json, time, shutil, sqlite3, secrets, hashlib, logging, asyncio, zipfile
 from io import BytesIO
 from collections import defaultdict
 from pathlib import Path
@@ -45,10 +45,45 @@ def _init_db():
             last_used  TEXT,
             active     INTEGER NOT NULL DEFAULT 1
         )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )""")
+        # Seed the admin password (hashed) from ADMIN_PASSWORD on first run; after that the
+        # stored value is the source of truth (changed via the admin panel).
+        if not conn.execute("SELECT 1 FROM settings WHERE key='admin_password'").fetchone():
+            conn.execute("INSERT INTO settings (key, value) VALUES ('admin_password', ?)",
+                         (_hash_password(ADMIN_PASSWORD),))
+        conn.commit()
+
+def _get_setting(key: str) -> str | None:
+    with _db() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else None
+
+def _set_setting(key: str, value: str):
+    with _db() as conn:
+        conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
+                     "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
         conn.commit()
 
 def _now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+# ── Password hashing (stdlib PBKDF2 — no extra deps) ─────────────────────────
+def _hash_password(pw: str) -> str:
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, 200_000)
+    return f"pbkdf2_sha256$200000${salt.hex()}${dk.hex()}"
+
+def _verify_password(pw: str, stored: str) -> bool:
+    try:
+        _algo, iters, salt_hex, hash_hex = stored.split("$")
+        dk = hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(salt_hex), int(iters))
+        return secrets.compare_digest(dk.hex(), hash_hex)
+    except Exception:
+        return False
 
 
 # ── App lifecycle ─────────────────────────────────────────────────────────────
@@ -421,15 +456,32 @@ class LoginRequest(BaseModel):
 class KeyCreateRequest(BaseModel):
     label: str = ""
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
 
 @app.post("/api/v1/admin/login", tags=["Admin"], summary="Admin login")
 async def admin_login(body: LoginRequest):
     """POST `{username, password}` → `{token}` valid for 1 hour."""
-    if body.username != ADMIN_USER or body.password != ADMIN_PASSWORD:
+    stored = _get_setting("admin_password")
+    if body.username != ADMIN_USER or not stored or not _verify_password(body.password, stored):
         raise HTTPException(401, "Invalid credentials")
     token = secrets.token_urlsafe(32)
     ADMIN_SESSIONS[token] = time.time() + 3600
     return {"token": token}
+
+
+@app.post("/api/v1/admin/change_password", tags=["Admin"], summary="Change the admin password")
+async def change_password(body: ChangePasswordRequest, admin: str = Depends(require_admin)):
+    """Verify the current password, then store a new one (hashed). Persists in the settings DB."""
+    stored = _get_setting("admin_password")
+    if not stored or not _verify_password(body.current_password, stored):
+        raise HTTPException(401, "Current password is incorrect")
+    if len(body.new_password) < 8:
+        raise HTTPException(400, "New password must be at least 8 characters")
+    _set_setting("admin_password", _hash_password(body.new_password))
+    return {"ok": True}
 
 
 @app.get("/api/v1/admin/keys", tags=["Admin"], summary="List all API keys")
