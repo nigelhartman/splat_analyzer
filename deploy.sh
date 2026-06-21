@@ -46,7 +46,7 @@ echo "=================================================="
 # ── 1. Upload source files ───────────────────────────────────────────────────
 echo ""
 echo ">> Uploading source files..."
-${SSH_CMD} "${REMOTE}" "mkdir -p ${APP_DIR}/webapp"
+${SSH_CMD} "${REMOTE}" "mkdir -p ${APP_DIR}/webapp ${APP_DIR}/renderers"
 
 if command -v rsync &>/dev/null; then
   rsync -az --progress \
@@ -69,11 +69,19 @@ if command -v rsync &>/dev/null; then
     --exclude ".DS_Store" \
     "${SCRIPT_DIR}/webapp/" \
     "${REMOTE}:${APP_DIR}/webapp/"
+  rsync -az --progress \
+    -e "ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no" \
+    --exclude "__pycache__" --exclude ".DS_Store" \
+    "${SCRIPT_DIR}/renderers/" \
+    "${REMOTE}:${APP_DIR}/renderers/"
 else
   for f in pipeline.py render_cameras.py server.py config.py run_local.py requirements.txt Dockerfile .dockerignore Caddyfile; do
     scp -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${SCRIPT_DIR}/${f}" "${REMOTE}:${APP_DIR}/${f}"
   done
   for f in webapp/index.html webapp/debug.html webapp/admin.html; do
+    scp -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${SCRIPT_DIR}/${f}" "${REMOTE}:${APP_DIR}/${f}"
+  done
+  for f in renderers/__init__.py renderers/base.py renderers/gsplat_backend.py renderers/gsplat_metal_backend.py; do
     scp -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${SCRIPT_DIR}/${f}" "${REMOTE}:${APP_DIR}/${f}"
   done
 fi

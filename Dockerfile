@@ -23,6 +23,7 @@ RUN grep -vE '^(torch|torchvision)([>=<!]|$)' requirements.txt \
 
 # Application code (rebuilt on every deploy)
 COPY server.py pipeline.py render_cameras.py config.py run_local.py ./
+COPY renderers/ ./renderers/
 COPY webapp/ ./webapp/
 
 # Persistent data:
