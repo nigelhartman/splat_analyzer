@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Annotated Splat Viewer</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.179.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.179.0/examples/jsm/",
+      "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.0.0/spark.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="viewport"></div>
+  <div id="empty-hint">Open the menu to load a splat (.ply) and annotations (.json)</div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
