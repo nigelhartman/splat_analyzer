@@ -1,0 +1,8 @@
+{
+  "name": "annotated-splat-viewer",
+  "private": true,
+  "description": "Standalone viewer for Gaussian splats with object annotations",
+  "scripts": {
+    "dev": "python3 -m http.server 8000"
+  }
+}
