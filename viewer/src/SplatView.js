@@ -32,20 +32,25 @@ export class SplatView {
     this._highlighted = null;
   }
 
-  async load(file) {
+  async load(source) {
     if (this.mesh) {
       this.sceneManager.remove(this.mesh);
       this.mesh = null;
     }
     this._highlighted = null;
 
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    const isUrl = typeof source === "string";
+    const fileName = isUrl ? source.split("/").pop() : source.name;
+    const buffer = isUrl
+      ? await fetch(source).then((r) => r.arrayBuffer())
+      : await source.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
     // .rad files carry a pre-baked LOD tree (built with `npm run build-lod`);
     // any other format gets an LOD tree generated on-the-fly in a worker.
-    const isBaked = file.name.toLowerCase().endsWith(".rad");
+    const isBaked = fileName.toLowerCase().endsWith(".rad");
     this.mesh = new SplatMesh({
       fileBytes: bytes,
-      fileName: file.name,
+      fileName,
       lod: isBaked ? undefined : true,
       onLoad: (mesh) => {
         mesh.rotation.x = Math.PI;

@@ -19,8 +19,11 @@ function toViewerSpace(obj) {
 }
 
 export class AnnotationParser {
-  static async parse(file) {
-    const text = await file.text();
+  static async parse(source) {
+    const text =
+      typeof source === "string"
+        ? await fetch(source).then((r) => r.text())
+        : await source.text();
     return AnnotationParser.fromText(text);
   }
 
