@@ -18,7 +18,7 @@ from pathlib import Path
 import torch
 
 import pipeline
-from config import PipelineConfig, QUALITY_PRESETS, DEFAULT_QUALITY
+from config import PipelineConfig, QUALITY_PRESETS, DEFAULT_QUALITY, WORLD_UP_CHOICES
 
 
 def main():
@@ -29,6 +29,9 @@ def main():
     p.add_argument("--quality", choices=list(QUALITY_PRESETS.keys()), default=DEFAULT_QUALITY,
                    help="Camera-coverage preset (controls number of views)")
     p.add_argument("--job_dir", default=None, help="Output directory (default: ./out_<name>)")
+    p.add_argument("--world_up", choices=list(WORLD_UP_CHOICES), default=d.world_up,
+                   help="Scene up-axis: y-down (standard 3DGS/COLMAP) or y-up "
+                        "(for scenes that otherwise render upside down)")
     p.add_argument("--score_threshold", type=float, default=d.score_threshold)
     p.add_argument("--min_votes",       type=int,   default=d.min_votes)
     p.add_argument("--min_peak_score",  type=float, default=d.min_peak_score)
@@ -45,6 +48,7 @@ def main():
     job_dir = args.job_dir or f"out_{Path(args.ply).stem}"
     cfg = PipelineConfig.from_overrides(
         quality=args.quality,
+        world_up=args.world_up,
         score_threshold=args.score_threshold,
         min_votes=args.min_votes,
         min_peak_score=args.min_peak_score,

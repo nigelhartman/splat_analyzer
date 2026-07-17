@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from config import PipelineConfig, QUALITY_PRESETS
+from config import PipelineConfig, QUALITY_PRESETS, WORLD_UP_CHOICES
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -161,25 +161,26 @@ async def _cleanup_loop():
 
 # ── Pipeline runner ───────────────────────────────────────────────────────────
 async def _run_pipeline_queued(job_id: str, ply_path: Path, prompt: str, job_dir: Path,
-                               quality: str, score_threshold: float,
+                               quality: str, world_up: str, score_threshold: float,
                                min_votes: int, min_peak_score: float):
     """Wait for the semaphore (one job at a time), then run the pipeline."""
     async with _JOB_SEMAPHORE:
         if job_id in JOB_QUEUE_ORDER:
             JOB_QUEUE_ORDER.remove(job_id)
         await _run_pipeline(job_id, ply_path, prompt, job_dir,
-                            quality, score_threshold, min_votes, min_peak_score)
+                            quality, world_up, score_threshold, min_votes, min_peak_score)
 
 async def _run_pipeline(job_id: str, ply_path: Path, prompt: str, job_dir: Path,
-                        quality: str, score_threshold: float,
+                        quality: str, world_up: str, score_threshold: float,
                         min_votes: int, min_peak_score: float):
     JOB_STATUS[job_id] = "running"
-    logger.info(f"[{job_id}] Running pipeline prompt={prompt!r} quality={quality} "
+    logger.info(f"[{job_id}] Running pipeline prompt={prompt!r} quality={quality} world_up={world_up} "
                 f"score_threshold={score_threshold} min_votes={min_votes} min_peak_score={min_peak_score}")
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "pipeline.py",
         "--ply", str(ply_path), "--prompt", prompt, "--job_dir", str(job_dir),
         "--quality", quality,
+        "--world_up", world_up,
         "--score_threshold", str(score_threshold),
         "--min_votes", str(min_votes),
         "--min_peak_score", str(min_peak_score),
@@ -249,6 +250,8 @@ async def detect(
                                          description="Minimum frames a cluster must appear in"),
     min_peak_score:   float      = Form(PipelineConfig().min_peak_score,
                                          description="Minimum best-frame score for a cluster to be kept (0–1)"),
+    world_up:         str        = Form(PipelineConfig().world_up,
+                                         description="Scene up-axis: y-down (standard 3DGS/COLMAP) | y-up"),
     api_key:          str        = Depends(require_api_key),
 ):
     """Upload a `.ply` or `.spz` file and a comma-separated prompt. Returns `job_id` immediately.
@@ -259,6 +262,9 @@ async def detect(
     if quality not in QUALITY_PRESETS:
         raise HTTPException(status_code=400,
                             detail=f"quality must be one of {sorted(QUALITY_PRESETS)}")
+    if world_up not in WORLD_UP_CHOICES:
+        raise HTTPException(status_code=400,
+                            detail=f"world_up must be one of {sorted(WORLD_UP_CHOICES)}")
     job_id   = str(uuid.uuid4())
     job_dir  = WORK_DIR / job_id
     job_dir.mkdir(parents=True)
@@ -271,9 +277,9 @@ async def detect(
     JOB_STATUS[job_id] = "pending"
     JOB_QUEUE_ORDER.append(job_id)
     asyncio.create_task(_run_pipeline_queued(job_id, scene_path, prompt, job_dir,
-                                             quality, score_threshold, min_votes, min_peak_score))
+                                             quality, world_up, score_threshold, min_votes, min_peak_score))
     logger.info(f"[{job_id}] Queued (position {len(JOB_QUEUE_ORDER)}) — "
-                f"file={file.filename!r} prompt={prompt!r} quality={quality} "
+                f"file={file.filename!r} prompt={prompt!r} quality={quality} world_up={world_up} "
                 f"score_threshold={score_threshold} min_votes={min_votes} min_peak_score={min_peak_score}")
     return {"job_id": job_id, "status": "pending", "queue_position": len(JOB_QUEUE_ORDER)}
 

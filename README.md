@@ -89,7 +89,7 @@ Both local modes write to `./out_<name>/` (override with `--job_dir`):
 - `frames/` — rendered RGB + depth views
 - `transforms.json` — camera poses
 
-Options: `--quality {low,medium,high}`, `--score_threshold`, `--min_votes`, `--min_peak_score`. Run `python run_local.py --help` for details.
+Options: `--quality {low,medium,high}`, `--world_up {y-down,y-up}`, `--score_threshold`, `--min_votes`, `--min_peak_score`. Run `python run_local.py --help` for details.
 
 ---
 
@@ -163,6 +163,7 @@ curl https://your-domain.com/api/v1/jobs/<job_id>/result -H "X-API-Key: wmd_..."
 | Parameter | Default | Description |
 |---|---|---|
 | `quality` | `medium` | Camera coverage: `low` (24 views) · `medium` (90) · `high` (192) |
+| `world_up` | `y-down` | Scene up-axis: `y-down` (standard 3DGS/COLMAP) · `y-up` (scenes that otherwise render upside down) |
 | `score_threshold` | `0.12` | Per-frame OWLv2 confidence cutoff |
 | `min_votes` | `8` | Frames an object must appear in to be kept |
 | `min_peak_score` | `0.40` | Best single-frame confidence required |
@@ -178,7 +179,7 @@ Works with **virtually any standard Gaussian Splat** — `.ply` or `.spz`:
 
 Tested successfully with splats from **World Labs** and **XGRIDS**, among others.
 
-> ⚠️ **Check orientation first.** Make sure your splat is **right-side up** before running. Some exporters flip the vertical axis — if the scene loads upside down, re-orient it first, otherwise camera placement and detections will be off.
+> ⚠️ **Check orientation first.** Make sure your splat is **right-side up** before running. Some exporters produce Y-up scenes (vertical axis flipped relative to standard 3DGS/COLMAP) — every view then renders upside down and detections collapse to the few orientation-tolerant classes. For those scenes pass `world_up=y-up` (CLI: `--world_up y-up`) instead of re-exporting the file.
 
 ---
 
