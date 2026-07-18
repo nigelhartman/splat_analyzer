@@ -20,3 +20,4 @@ opencv-python-headless==4.11.0.86
 Pillow
 scipy==1.15.3
 six==1.17.0
+ninja
