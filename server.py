@@ -25,8 +25,11 @@ WEBAPP_DIR     = Path("webapp")
 
 JOB_STATUS      = {}   # {job_id: "pending"|"running"|"done"|"failed"}
 JOB_QUEUE_ORDER: list = []  # job_ids in submission order while pending
-_JOB_SEMAPHORE: asyncio.Semaphore | None = None  # enforces one job at a time
+JOB_OWNER       = {}   # {job_id: api_key} — who submitted each job (per-user limit)
+_JOB_SEMAPHORE: asyncio.Semaphore | None = None  # enforces one job at a time (one GPU)
 ADMIN_SESSIONS  = {}   # {token: expiry_epoch}
+
+ACTIVE_STATES = ("pending", "running")
 
 
 # ── Database ─────────────────────────────────────────────────────────────────
@@ -144,6 +147,27 @@ async def require_admin(authorization: str = Header(None)):
     return token
 
 
+# ── Job bookkeeping ───────────────────────────────────────────────────────────
+def _active_job_for(owner: str) -> str | None:
+    """Return the caller's currently active (pending/running) job_id, if any.
+
+    Used to enforce one concurrent analysis per user: a user may only have a
+    single job in flight at a time. Because of this, no user can occupy more
+    than one slot in the shared FIFO queue, so different users' jobs naturally
+    run after one another (fair scheduling)."""
+    for jid, key in JOB_OWNER.items():
+        if key == owner and JOB_STATUS.get(jid) in ACTIVE_STATES:
+            return jid
+    return None
+
+def _queue_position(job_id: str) -> int:
+    """1-based position of a pending job in the shared FIFO queue."""
+    try:
+        return JOB_QUEUE_ORDER.index(job_id) + 1
+    except ValueError:
+        return 1  # no longer queued → transitioning to running
+
+
 # ── Cleanup loop ──────────────────────────────────────────────────────────────
 async def _cleanup_loop():
     while True:
@@ -154,6 +178,7 @@ async def _cleanup_loop():
                 if d.is_dir() and (now - d.stat().st_mtime) > JOB_TTL:
                     shutil.rmtree(d, ignore_errors=True)
                     JOB_STATUS.pop(d.name, None)
+                    JOB_OWNER.pop(d.name, None)
                     logger.info(f"Cleaned up job {d.name}")
         except Exception as exc:
             logger.warning(f"Cleanup error: {exc}")
@@ -252,24 +277,50 @@ async def detect(
     api_key:          str        = Depends(require_api_key),
 ):
     """Upload a `.ply` or `.spz` file and a comma-separated prompt. Returns `job_id` immediately.
-    Poll `/api/v1/jobs/{job_id}/status` until `done`, then fetch the result."""
+    Poll `/api/v1/jobs/{job_id}/status` until `done`, then fetch the result.
+
+    Only **one active analysis per API key** is allowed at a time. Submitting while
+    you already have a `pending` or `running` job returns **409** with the existing
+    job's id — wait for it to finish (or poll its status) before submitting again."""
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in (".ply", ".spz"):
         raise HTTPException(status_code=400, detail="Only .ply and .spz files are supported")
     if quality not in QUALITY_PRESETS:
         raise HTTPException(status_code=400,
                             detail=f"quality must be one of {sorted(QUALITY_PRESETS)}")
+
+    # One concurrent analysis per user: reject if this key already has a job in flight.
+    existing = _active_job_for(api_key)
+    if existing:
+        raise HTTPException(status_code=409, detail={
+            "message": "You already have an active analysis. Only one job per user "
+                       "at a time — wait for it to finish before submitting another.",
+            "job_id": existing,
+            "status": JOB_STATUS.get(existing),
+            "queue_position": _queue_position(existing) if JOB_STATUS.get(existing) == "pending" else None,
+        })
+
     job_id   = str(uuid.uuid4())
     job_dir  = WORK_DIR / job_id
     job_dir.mkdir(parents=True)
+    # Reserve the slot before the (blocking) upload so a rapid second request sees it.
+    JOB_STATUS[job_id] = "pending"
+    JOB_OWNER[job_id]  = api_key
+    JOB_QUEUE_ORDER.append(job_id)
     scene_path = job_dir / f"scene{suffix}"
     try:
         with open(scene_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
+    except Exception:
+        # Roll back the reservation so a failed upload doesn't block the user.
+        JOB_STATUS.pop(job_id, None)
+        JOB_OWNER.pop(job_id, None)
+        if job_id in JOB_QUEUE_ORDER:
+            JOB_QUEUE_ORDER.remove(job_id)
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise
     finally:
         file.file.close()
-    JOB_STATUS[job_id] = "pending"
-    JOB_QUEUE_ORDER.append(job_id)
     asyncio.create_task(_run_pipeline_queued(job_id, scene_path, prompt, job_dir,
                                              quality, score_threshold, min_votes, min_peak_score))
     logger.info(f"[{job_id}] Queued (position {len(JOB_QUEUE_ORDER)}) — "
@@ -290,10 +341,7 @@ async def job_status(job_id: str, api_key: str = Depends(require_api_key)):
         raise HTTPException(404, "Job not found")
     result: dict = {"job_id": job_id, "status": status or "unknown"}
     if status == "pending":
-        try:
-            pos = JOB_QUEUE_ORDER.index(job_id) + 1
-        except ValueError:
-            pos = 1  # transitioning to running
+        pos = _queue_position(job_id)
         result["queue_position"] = pos
         result["queue_ahead"] = pos - 1
     return result

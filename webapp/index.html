@@ -513,6 +513,10 @@
       form.append("min_votes",       document.getElementById("min-votes-input").value);
       form.append("min_peak_score",  document.getElementById("min-peak-score-input").value);
       const res = await fetch("/api/v1/detect", { method: "POST", headers: { "X-API-Key": key }, body: form });
+      if (res.status === 409) {
+        const d = (await res.json().catch(() => ({}))).detail || {};
+        throw new Error(d.message || "You already have an analysis running. Please wait for it to finish.");
+      }
       if (!res.ok) throw new Error("Submit failed: " + (await res.text()).slice(0,200));
       const { job_id } = await res.json();
       lastJobId = job_id;
