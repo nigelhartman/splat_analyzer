@@ -60,6 +60,9 @@ export class SceneManager {
 
     this._resizeListeners = [];
     this._frameListeners = [];
+    this.fps = 0;
+    this._fpsFrames = 0;
+    this._fpsLast = performance.now();
     window.addEventListener("resize", () => this._onResize());
   }
 
@@ -88,6 +91,13 @@ export class SceneManager {
   start() {
     const loop = () => {
       requestAnimationFrame(loop);
+      this._fpsFrames += 1;
+      const now = performance.now();
+      if (now - this._fpsLast >= 500) {
+        this.fps = (this._fpsFrames * 1000) / (now - this._fpsLast);
+        this._fpsFrames = 0;
+        this._fpsLast = now;
+      }
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
       for (const fn of this._frameListeners) fn(this.camera);

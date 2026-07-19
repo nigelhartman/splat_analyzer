@@ -1,0 +1,14 @@
+name = "shrill-dawn-2565"
+compatibility_date = "2026-06-28"
+main = "./worker.js"
+
+[assets]
+directory = "./"
+binding = "ASSETS"
+# Ensure /r2/* hits the Worker (R2 proxy) instead of the static asset handler.
+run_worker_first = ["/r2/*"]
+
+[[r2_buckets]]
+binding = "SAMPLES"
+bucket_name = "splat-analyzer"
+remote = true

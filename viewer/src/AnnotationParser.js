@@ -20,10 +20,16 @@ function toViewerSpace(obj) {
 
 export class AnnotationParser {
   static async parse(source) {
-    const text =
-      typeof source === "string"
-        ? await fetch(source).then((r) => r.text())
-        : await source.text();
+    let text;
+    if (typeof source === "string") {
+      const res = await fetch(source);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch annotations: ${res.status} ${res.statusText}`);
+      }
+      text = await res.text();
+    } else {
+      text = await source.text();
+    }
     return AnnotationParser.fromText(text);
   }
 

@@ -3,6 +3,11 @@
   "private": true,
   "description": "Standalone viewer for Gaussian splats with object annotations",
   "scripts": {
-    "dev": "python3 -m http.server 8000"
+    "dev": "python3 dev_server.py",
+    "dev:wrangler": "wrangler dev --port 8000 --ip 127.0.0.1",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.112.0"
   }
 }

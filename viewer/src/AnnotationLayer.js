@@ -15,6 +15,9 @@ export class AnnotationLayer {
     this.sceneManager = sceneManager;
     this.hooks = hooks;
     this.objects = [];
+    this._lastUpdate = 0;
+    this._revealing = false;
+    this._revealTimers = [];
     sceneManager.addResizeListener((w, h) => {
       for (const o of this.objects) o.box.setResolution(w, h);
     });
@@ -31,12 +34,50 @@ export class AnnotationLayer {
   }
 
   clear() {
+    this._cancelReveal();
     for (const o of this.objects) o.removeFrom(this.sceneManager);
     this.objects = [];
   }
 
+  playReveal() {
+    if (this._revealing || this.objects.length === 0) return;
+    this._revealing = true;
+
+    for (const obj of this.objects) obj.marker.forceHide();
+
+    const count = this.objects.length;
+    const interval = 2500 / count;
+    const objects = this.objects;
+
+    this._revealTimers.push(setTimeout(() => {
+      objects.forEach((obj, i) => {
+        this._revealTimers.push(setTimeout(() => {
+          if (this.objects.includes(obj)) obj.marker.popIn();
+        }, i * interval));
+      });
+      this._revealTimers.push(setTimeout(() => {
+        for (const obj of objects) {
+          if (this.objects.includes(obj)) obj.marker.clearForce();
+        }
+        this._revealing = false;
+        this._revealTimers = [];
+      }, count * interval + 400));
+    }, 1000));
+  }
+
+  _cancelReveal() {
+    for (const id of this._revealTimers) clearTimeout(id);
+    this._revealTimers = [];
+    this._revealing = false;
+  }
+
   _update(camera) {
     if (this.objects.length === 0) return;
+
+    // Throttle to ~30fps — this is a cosmetic overlay that doesn't need per-frame precision.
+    const now = performance.now();
+    if (now - this._lastUpdate < 33) return;
+    this._lastUpdate = now;
 
     const W = window.innerWidth;
     const H = window.innerHeight;
@@ -65,22 +106,21 @@ export class AnnotationLayer {
     }
 
     // ── 2. Depth-sort markers (closest = highest priority) ──────────────────
+    // Use approxSize instead of getBoundingClientRect to avoid forced layout reflows
+    // (CSS2DRenderer writes transforms, then reading rects would flush the whole tree).
     const entries = this.objects.map(obj => {
       const s = toScreen(obj.annotation.position, camera, W, H);
-      const el = obj.marker.element;
-      const r = el.getBoundingClientRect();
-      return { obj, z: s.z, screenX: s.x, screenY: s.y, rect: r };
+      return { obj, z: s.z, screenX: s.x, screenY: s.y };
     });
     entries.sort((a, b) => a.z - b.z);
 
     // ── 3. Greedy label overlap prevention ──────────────────────────────────
-    // Expand rects a bit so nearby-but-technically-disjoint labels don't cluster.
     const EXPAND = 8;
     const COVER = 0.55; // hide if > 55% of farther marker's area is covered
     const shownRects = [];
 
     for (const entry of entries) {
-      const { obj, screenX, screenY, rect } = entry;
+      const { obj, screenX, screenY } = entry;
 
       // Check if this marker's center falls inside a visible box that isn't its own.
       let hiddenByBox = false;
@@ -96,10 +136,11 @@ export class AnnotationLayer {
       // Check if any already-shown marker significantly covers this one.
       let hiddenByOverlap = false;
       if (!hiddenByBox) {
+        const { w, h } = obj.marker.approxSize;
         const ex = {
-          left: rect.left - EXPAND, right: rect.right + EXPAND,
-          top: rect.top - EXPAND, bottom: rect.bottom + EXPAND,
-          width: rect.width + EXPAND * 2, height: rect.height + EXPAND * 2,
+          left: screenX - w / 2 - EXPAND, right: screenX + w / 2 + EXPAND,
+          top: screenY - h / 2 - EXPAND, bottom: screenY + h / 2 + EXPAND,
+          width: w + EXPAND * 2, height: h + EXPAND * 2,
         };
         const area = ex.width * ex.height;
         for (const s of shownRects) {
@@ -112,8 +153,8 @@ export class AnnotationLayer {
         }
         if (!hiddenByOverlap) {
           shownRects.push({
-            left: rect.left - EXPAND, right: rect.right + EXPAND,
-            top: rect.top - EXPAND, bottom: rect.bottom + EXPAND,
+            left: ex.left, right: ex.right,
+            top: ex.top, bottom: ex.bottom,
           });
         }
       }

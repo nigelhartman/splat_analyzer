@@ -5,6 +5,8 @@ import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 //   hoverLabelObject — full label, anchored at box-top; slides in on hover
 export class Marker {
   constructor(annotation, { onHoverStart, onHoverEnd }) {
+    this._forced = false;
+
     // ── dot + connector + static title ───────────────────────────────────
     const markerEl = document.createElement("div");
     markerEl.className = "marker";
@@ -21,14 +23,23 @@ export class Marker {
     dot.className = "marker-dot";
     // No inline background — hollow style is fully CSS-driven via --dot-color.
 
-    markerEl.appendChild(title);
-    markerEl.appendChild(line);
-    markerEl.appendChild(dot);
+    // Inner wrapper: CSS2DRenderer sets transform on markerEl; we animate this child
+    // independently so there's no transform conflict.
+    const inner = document.createElement("div");
+    inner.className = "marker-inner";
+    inner.appendChild(title);
+    inner.appendChild(line);
+    inner.appendChild(dot);
+    markerEl.appendChild(inner);
 
     this.dotObject = new CSS2DObject(markerEl);
     this.dotObject.position.copy(annotation.position);
     this._markerEl = markerEl;
+    this._markerInner = inner;
     this._titleEl = title;
+    // Pre-computed size estimate for overlap detection — avoids per-frame getBoundingClientRect.
+    // 7.2px per char (10px monospace + letter-spacing) + 18px padding/border; 34px tall.
+    this._approxSize = { w: annotation.label.length * 7.2 + 18, h: 34 };
 
     // ── hover label anchored at box top-center ────────────────────────────
     const anchorEl = document.createElement("div");
@@ -63,8 +74,10 @@ export class Marker {
   }
 
   get element() { return this._markerEl; }
+  get approxSize() { return this._approxSize; }
 
   suppress(hidden) {
+    if (this._forced) return;
     const v = hidden ? "hidden" : "";
     this._markerEl.style.visibility = v;
     this._hoverAnchorEl.style.visibility = v;
@@ -72,5 +85,26 @@ export class Marker {
       this._hoverLabelEl.classList.remove("visible");
       this._titleEl.classList.remove("faded");
     }
+  }
+
+  forceHide() {
+    this._forced = true;
+    this._markerEl.style.visibility = "hidden";
+    this._hoverAnchorEl.style.visibility = "hidden";
+    this._markerInner.classList.remove("marker-popping");
+  }
+
+  popIn() {
+    this._forced = true;
+    this._markerEl.style.visibility = "";
+    this._hoverAnchorEl.style.visibility = "";
+    this._markerInner.classList.remove("marker-popping");
+    void this._markerInner.offsetWidth;
+    this._markerInner.classList.add("marker-popping");
+  }
+
+  clearForce() {
+    this._forced = false;
+    this._markerInner.classList.remove("marker-popping");
   }
 }
