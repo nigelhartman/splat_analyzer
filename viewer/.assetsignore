@@ -1,0 +1,10 @@
+node_modules
+.wrangler
+.r2-cache
+.dev.vars
+*.md
+package.json
+package-lock.json
+wrangler.toml
+dev_server.py
+.assetsignore
