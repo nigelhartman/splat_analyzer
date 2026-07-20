@@ -27,7 +27,7 @@ import torch
 import imageio.v2 as imageio
 from scipy.spatial import cKDTree
 
-from config import PipelineConfig, QUALITY_PRESETS, DEFAULT_QUALITY
+from config import PipelineConfig, QUALITY_PRESETS, DEFAULT_QUALITY, WORLD_UP_CHOICES
 from renderers import get_renderer
 
 # Number of camera views rendered in a single GPU call (RGB pass).
@@ -412,11 +412,17 @@ def _generate_camera_positions(means_np: np.ndarray, n_positions: int,
 
 
 def _build_poses(positions: list, n_azimuth: int, n_elevation: int,
+                 world_up: str = "y-down",
                  el_min: float = -55.0, el_max: float = 40.0):
     """
     From each position do a full panoramic sweep over azimuth and elevation.
     Returns (all_poses, position_indices).
     """
+    # In the OpenCV c2w built by _lookat, image-down for a level view equals the
+    # up vector passed in — so it must point at the scene's floor. Standard
+    # 3DGS/COLMAP scenes store +Y toward the floor ("y-down"); Y-up scenes need
+    # the flipped vector or every frame renders upside down.
+    up = np.array([0.0, -1.0, 0.0]) if world_up == "y-up" else np.array([0.0, 1.0, 0.0])
     all_poses = []
     position_indices = []
     elevations = np.linspace(el_min, el_max, n_elevation, dtype=float)
@@ -433,7 +439,7 @@ def _build_poses(positions: list, n_azimuth: int, n_elevation: int,
                     math.cos(el_r) * math.cos(az_r),
                 ], dtype=np.float32)
                 target = pos + look_dir
-                c2w = _lookat(pos, target)
+                c2w = _lookat(pos, target, up)
                 all_poses.append(c2w)
                 position_indices.append(pos_idx)
 
@@ -516,7 +522,7 @@ def render_views(ply_path: str, job_dir: str, cfg: PipelineConfig | None = None)
     )
 
     cam_positions, look_targets = _generate_camera_positions(means_np, n_positions, cfg)
-    poses, position_indices = _build_poses(cam_positions, n_azimuth, n_elevation)
+    poses, position_indices = _build_poses(cam_positions, n_azimuth, n_elevation, cfg.world_up)
     total = len(poses)
     print(f"[render] {n_positions} positions × {n_azimuth} azimuth × {n_elevation} elevation = {total} views"
           f"  (batch={RENDER_BATCH}, io_workers={IO_WORKERS}, device={device})")
@@ -583,7 +589,11 @@ if __name__ == "__main__":
                         default=DEFAULT_QUALITY)
     parser.add_argument("--width",   type=int, default=512)
     parser.add_argument("--height",  type=int, default=512)
+    parser.add_argument("--world_up", choices=list(WORLD_UP_CHOICES),
+                        default=PipelineConfig().world_up,
+                        help="Scene up-axis: y-down (standard 3DGS/COLMAP) or y-up")
     args = parser.parse_args()
     cfg = PipelineConfig.from_overrides(quality=args.quality,
-                                        width=args.width, height=args.height)
+                                        width=args.width, height=args.height,
+                                        world_up=args.world_up)
     render_views(args.ply, args.job_dir, cfg)

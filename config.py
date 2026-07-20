@@ -21,6 +21,11 @@ QUALITY_PRESETS = {
 }
 DEFAULT_QUALITY = "medium"
 
+# Scene up-axis conventions. Standard 3DGS/COLMAP scenes store +Y toward the
+# floor ("y-down"); some exporters produce Y-up scenes, which render upside
+# down unless world_up="y-up".
+WORLD_UP_CHOICES = ("y-down", "y-up")
+
 
 @dataclass
 class PipelineConfig:
@@ -28,6 +33,7 @@ class PipelineConfig:
     width: int = 512
     height: int = 512
     renderer: str = "auto"                  # "auto" | "gsplat" (CUDA) | "gsplat-metal" (Apple MPS)
+    world_up: str = "y-down"                # scene up-axis: "y-down" (standard 3DGS/COLMAP) | "y-up"
     quality: str = DEFAULT_QUALITY          # drives the camera counts below
     n_positions: int = 5
     n_azimuth: int = 6

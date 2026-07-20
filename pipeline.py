@@ -28,7 +28,7 @@ from PIL import Image
 from transformers import Owlv2Processor, Owlv2ForObjectDetection
 
 import render_cameras
-from config import PipelineConfig, QUALITY_PRESETS, DEFAULT_QUALITY
+from config import PipelineConfig, QUALITY_PRESETS, DEFAULT_QUALITY, WORLD_UP_CHOICES
 
 
 def _select_device() -> str:
@@ -332,12 +332,16 @@ if __name__ == "__main__":
     parser.add_argument("--quality",          choices=list(QUALITY_PRESETS.keys()),
                         default=DEFAULT_QUALITY,
                         help="Camera-coverage preset (controls number of views)")
+    parser.add_argument("--world_up",         choices=list(WORLD_UP_CHOICES),
+                        default=_d.world_up,
+                        help="Scene up-axis: y-down (standard 3DGS/COLMAP) or y-up")
     parser.add_argument("--score_threshold",  type=float, default=_d.score_threshold)
     parser.add_argument("--min_votes",        type=int,   default=_d.min_votes)
     parser.add_argument("--min_peak_score",   type=float, default=_d.min_peak_score)
     args = parser.parse_args()
     cfg = PipelineConfig.from_overrides(
         quality=args.quality,
+        world_up=args.world_up,
         score_threshold=args.score_threshold,
         min_votes=args.min_votes,
         min_peak_score=args.min_peak_score,
