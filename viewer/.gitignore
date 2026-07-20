@@ -1,5 +1,4 @@
 node_modules/
 .wrangler/
-.r2-cache/
 .dev.vars
 package-lock.json

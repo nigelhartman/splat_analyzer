@@ -6,32 +6,14 @@ import { SettingsMenu } from "./SettingsMenu.js";
 
 const PLAY_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>`;
 
-function formatExampleLabel(name, bytes, splatCount) {
-  const mb = (bytes / (1024 * 1024)).toFixed(2);
-  const mio = (splatCount / 1_000_000).toFixed(1);
-  return `${name} (${mb} MB - ${mio} mio splats)`;
-}
-
-// Served same-origin via the Worker R2 proxy at /r2/<key> (see worker.js).
-// Size/count come from the .rad file (Content-Length + header "count").
+// Bundled with the repo (see viewer/splats/) so the viewer works without any
+// external bucket or proxy.
 const EXAMPLES = [
   {
     id: "1",
-    label: formatExampleLabel("1_Nexels_Grocery", 145_861_672, 2_981_234),
-    splatUrl: "/r2/1_Nexels_Grocery.rad",
-    annotationsUrl: "/r2/1_Nexels_Grocery.json",
-  },
-  {
-    id: "2",
-    label: formatExampleLabel("2_candy-room", 47_390_520, 2_863_989),
-    splatUrl: "/r2/2_candy-room.rad",
-    annotationsUrl: "/r2/2_candy-room.json",
-  },
-  {
-    id: "3",
-    label: formatExampleLabel("3_Superior_Marshal_Wildfire", 271_007_112, 6_077_529),
-    splatUrl: "/r2/3_Superior_Marshal_Wildfire.rad",
-    annotationsUrl: "/r2/3_Superior_Marshal_Wildfire.json",
+    label: "CozyBedroom",
+    splatUrl: "/splats/CozyBedroom.spz",
+    annotationsUrl: "/splats/CozyBedroom.json",
   },
 ];
 

@@ -20,3 +20,6 @@ venv/
 third_party/
 *.air
 *.metallib
+
+# bundled default sample for the viewer, intentionally committed
+!/viewer/splats/*.spz

@@ -1,6 +1,5 @@
 node_modules
 .wrangler
-.r2-cache
 .dev.vars
 *.md
 package.json
